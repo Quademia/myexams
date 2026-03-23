@@ -1,10 +1,11 @@
 import type { NextConfig } from "next";
 
-// This import enables Cloudflare bindings (like our D1 database)
-// to work during local development with `npm run dev`.
-// In production, bindings are available automatically.
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
-initOpenNextCloudflareForDev();
+// Only initialize Cloudflare dev bindings when running locally (npm run dev).
+// In production, Cloudflare provides bindings automatically.
+if (process.env.NODE_ENV === "development") {
+  const { initOpenNextCloudflareForDev } = require("@opennextjs/cloudflare");
+  initOpenNextCloudflareForDev();
+}
 
 const nextConfig: NextConfig = {};
 
