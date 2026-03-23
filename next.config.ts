@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  /* We'll add Cloudflare-specific config here later */
-};
+// This import enables Cloudflare bindings (like our D1 database)
+// to work during local development with `npm run dev`.
+// In production, bindings are available automatically.
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+initOpenNextCloudflareForDev();
+
+const nextConfig: NextConfig = {};
 
 export default nextConfig;
