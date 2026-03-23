@@ -190,3 +190,53 @@ export async function requireAuth() {
   }
   return auth;
 }
+
+// ---------- Join Code helpers ----------
+
+const CODE_ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+// Generates a random join code like "ABCD-EF23".
+export function makeJoinCodePlain(): string {
+  const rnd = (n: number) => {
+    let s = "";
+    const a = new Uint8Array(n);
+    crypto.getRandomValues(a);
+    for (let i = 0; i < n; i++) s += CODE_ALPH[a[i] % CODE_ALPH.length];
+    return s;
+  };
+  return `${rnd(4)}-${rnd(4)}`;
+}
+
+// Hashes a join code with the pepper for storage.
+export async function joinCodeHash(codePlain: string, pepper: string): Promise<string> {
+  return await sha256Hex(`${codePlain}|${pepper}|JOINCODE`);
+}
+
+// Returns true if an ISO date string is in the past.
+export function isIsoInPast(iso: string | null): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return false;
+  return t < Date.now();
+}
+
+// Human-readable description of what a join code does.
+export function describeCode(scope: string, role: string, courseTitle?: string | null): string {
+  if (scope === "TENANT_ROLE" && role === "STUDENT") return "Students → join school";
+  if (scope === "TENANT_ROLE" && role === "TEACHER") return "Teachers → join school";
+  if (scope === "COURSE_ENROLL" && courseTitle) return `Students → enrol in ${courseTitle}`;
+  if (scope === "COURSE_TEACHER" && courseTitle) return `Teachers → assign to ${courseTitle}`;
+  return `${scope} (${role})`;
+}
+
+// Formats an ISO date string for display.
+export function fmtISO(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-GB", {
+      day: "numeric", month: "short", year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}

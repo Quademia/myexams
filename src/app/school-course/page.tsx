@@ -7,7 +7,8 @@
 // focused tabs for each concern.
 
 import { redirect } from "next/navigation";
-import { requireAuth, pickActiveMembership } from "@/lib/auth";
+import { requireAuth, pickActiveMembership, makeJoinCodePlain, joinCodeHash, isIsoInPast, describeCode, fmtISO } from "@/lib/auth";
+import { getEnv } from "@/lib/env";
 import { getDb } from "@/lib/db";
 import { SchoolLayout } from "@/components/SchoolLayout";
 import { Card } from "@/components/Card";
@@ -169,6 +170,62 @@ async function unenrolClassAction(formData: FormData) {
   redirect(`/school-course?course_id=${courseId}&tab=classes`);
 }
 
+async function createCodeAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
+
+  const courseId = formData.get("course_id") as string;
+  const who = (formData.get("who") as string || "").trim();
+  const autoApprove = Number(formData.get("auto_approve") || "0") === 1 ? 1 : 0;
+  const expDays = Math.max(1, parseInt(formData.get("exp_days") as string || "14", 10) || 14);
+  const maxUses = Math.max(1, parseInt(formData.get("max_uses") as string || "300", 10) || 300);
+
+  // Map "who" + course context to scope and role.
+  let scope: string, role: string;
+  if (who === "student") { scope = "COURSE_ENROLL"; role = "STUDENT"; }
+  else if (who === "teacher") { scope = "COURSE_TEACHER"; role = "TEACHER"; }
+  else redirect(`/school-course?course_id=${courseId}&tab=join-codes`);
+
+  const { first, run } = getDb();
+  const { APP_SECRET } = getEnv();
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + expDays * 24 * 60 * 60 * 1000).toISOString();
+
+  // Generate a unique code (retry up to 6 times if collision).
+  let codePlain = "", codeHash_ = "";
+  for (let i = 0; i < 6; i++) {
+    codePlain = makeJoinCodePlain();
+    codeHash_ = await joinCodeHash(codePlain, APP_SECRET);
+    const exists = await first("SELECT id FROM join_codes WHERE code_hash=? LIMIT 1", [codeHash_]);
+    if (!exists) break;
+  }
+
+  await run(
+    `INSERT INTO join_codes (id, tenant_id, scope, role, course_id, code_hash, auto_approve, expires_at, max_uses, uses_approved, revoked, created_by_user_id, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,0,0,?,?,?)`,
+    [crypto.randomUUID(), active.tenant_id, scope!, role!, courseId, codeHash_, autoApprove, expiresAt, maxUses, auth.user!.id, now, now]
+  );
+
+  // Redirect back with the plain code shown as a query param (shown only once).
+  redirect(`/school-course?course_id=${courseId}&tab=join-codes&new_code=${encodeURIComponent(codePlain)}`);
+}
+
+async function revokeCodeAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
+
+  const codeId = formData.get("code_id") as string;
+  const courseId = formData.get("course_id") as string;
+  const { run } = getDb();
+  await run("UPDATE join_codes SET revoked=1, updated_at=? WHERE id=? AND tenant_id=?",
+    [new Date().toISOString(), codeId, active.tenant_id]);
+  redirect(`/school-course?course_id=${courseId}&tab=join-codes`);
+}
+
 // ============================================================
 // Page Component
 // ============================================================
@@ -176,7 +233,7 @@ async function unenrolClassAction(formData: FormData) {
 export default async function SchoolCoursePage({
   searchParams,
 }: {
-  searchParams: Promise<{ course_id?: string; tab?: string }>;
+  searchParams: Promise<{ course_id?: string; tab?: string; new_code?: string }>;
 }) {
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
@@ -185,6 +242,7 @@ export default async function SchoolCoursePage({
   const params = await searchParams;
   const courseId = params.course_id;
   const tab = params.tab || "details";
+  const newCode = params.new_code;
 
   if (!courseId) redirect("/school-courses");
 
@@ -257,13 +315,7 @@ export default async function SchoolCoursePage({
       {tab === "classes" && <ClassesTab courseId={course.id} tenantId={tid} />}
 
       {/* ---------- Join Codes Tab ---------- */}
-      {tab === "join-codes" && (
-        <Card>
-          <p className="text-sm text-gray-400 py-4 text-center">
-            Join codes for this course — coming soon.
-          </p>
-        </Card>
-      )}
+      {tab === "join-codes" && <JoinCodesTab courseId={course.id} tenantId={tid} newCode={newCode} />}
     </SchoolLayout>
   );
 }
@@ -282,10 +334,11 @@ async function TeachersTab({ courseId, tenantId }: { courseId: string; tenantId:
     [courseId]
   );
 
+  // Include SCHOOL_ADMIN too — they can also teach courses.
   const allTeachers = await all<{ id: string; name: string; email: string }>(
     `SELECT u.id, u.name, u.email FROM memberships m
      JOIN users u ON u.id = m.user_id
-     WHERE m.tenant_id=? AND m.role='TEACHER' AND m.status='ACTIVE' AND u.status='ACTIVE'
+     WHERE m.tenant_id=? AND m.role IN ('TEACHER','SCHOOL_ADMIN') AND m.status='ACTIVE' AND u.status='ACTIVE'
      ORDER BY u.name ASC`,
     [tenantId]
   );
@@ -477,6 +530,125 @@ async function ClassesTab({ courseId, tenantId }: { courseId: string; tenantId: 
           </form>
         </Card>
       )}
+    </>
+  );
+}
+
+async function JoinCodesTab({ courseId, tenantId, newCode }: { courseId: string; tenantId: string; newCode?: string }) {
+  const { all } = getDb();
+
+  // Fetch active (non-revoked) codes for this course.
+  const codes = await all<{
+    id: string; scope: string; role: string; course_title: string | null;
+    auto_approve: number; expires_at: string; max_uses: number; uses_approved: number;
+  }>(
+    `SELECT jc.id, jc.scope, jc.role, c.title AS course_title,
+       jc.auto_approve, jc.expires_at, jc.max_uses, jc.uses_approved
+     FROM join_codes jc
+     LEFT JOIN courses c ON c.id = jc.course_id
+     WHERE jc.tenant_id=? AND jc.course_id=? AND jc.revoked=0
+     ORDER BY jc.created_at DESC`,
+    [tenantId, courseId]
+  );
+
+  const activeCodes = codes.filter((c) => !isIsoInPast(c.expires_at));
+
+  return (
+    <>
+      {/* Show newly created code (displayed only once) */}
+      {newCode && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-3">
+          <h2 className="text-base font-semibold text-green-800">Join code created</h2>
+          <p className="text-sm text-green-700 mt-1">Copy and share this code (shown only once):</p>
+          <div className="bg-white border border-dashed border-green-300 rounded-lg p-4 mt-2">
+            <span className="text-2xl font-black tracking-widest">{newCode}</span>
+          </div>
+          <p className="text-xs text-green-600 mt-2">Users go to /join, enter the code, then login or create an account.</p>
+        </div>
+      )}
+
+      <Card title={`Active Codes (${activeCodes.length})`}>
+        {activeCodes.length === 0 ? (
+          <p className="text-sm text-gray-400">No active codes for this course</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">Description</th>
+                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">Limits</th>
+                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">Approval</th>
+                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeCodes.map((c) => (
+                  <tr key={c.id} className="border-b border-gray-100">
+                    <td className="py-3 px-2 font-medium">
+                      {describeCode(c.scope, c.role, c.course_title)}
+                    </td>
+                    <td className="py-3 px-2 text-xs text-gray-500">
+                      Expires: {fmtISO(c.expires_at)}<br />
+                      Uses: {c.uses_approved}/{c.max_uses}
+                    </td>
+                    <td className="py-3 px-2">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        c.auto_approve === 1
+                          ? "bg-green-50 text-green-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}>
+                        {c.auto_approve === 1 ? "Auto-approve" : "Needs approval"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-2">
+                      <form action={revokeCodeAction}>
+                        <input type="hidden" name="code_id" value={c.id} />
+                        <input type="hidden" name="course_id" value={courseId} />
+                        <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
+                          Revoke
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card title="Create Code for this Course">
+        <form action={createCodeAction}>
+          <input type="hidden" name="course_id" value={courseId} />
+
+          <label className="block text-sm mb-1">Who is this code for?</label>
+          <select name="who" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
+            <option value="student">Student</option>
+            <option value="teacher">Teacher</option>
+          </select>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="block text-sm mb-1">Auto-approve</label>
+              <select name="auto_approve" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="0">No (admin approval required)</option>
+                <option value="1">Yes (instant)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm mb-1">Expiry (days)</label>
+              <input name="exp_days" type="number" min="1" defaultValue="14" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+          </div>
+
+          <label className="block text-sm mb-1">Max uses</label>
+          <input name="max_uses" type="number" min="1" defaultValue="300" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
+
+          <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+            Create code
+          </button>
+        </form>
+      </Card>
     </>
   );
 }
