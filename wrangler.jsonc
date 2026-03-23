@@ -1,0 +1,20 @@
+{
+  // This file tells Cloudflare Workers how to run our Next.js app.
+  // The "main" points to the OpenNext worker entry point.
+  // D1 binding gives our app access to the database.
+  "name": "qacademy-beta-b",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2024-09-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "beta_b_db",
+      "database_id": "e3d2f697-8bb3-4bf1-bc81-ebda379e1919"
+    }
+  ]
+}
