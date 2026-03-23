@@ -148,3 +148,45 @@ export function pickActiveMembership(auth: AuthResult): Membership | null {
   if (!tid) return null;
   return auth.memberships.find((m) => m.tenant_id === tid) || null;
 }
+
+// Sets the active school for the current session.
+// Called when a user picks or switches schools.
+export async function setActiveTenant(tenantId: string) {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("qa_sess")?.value;
+  if (!token) return;
+  const tokenHash = await sha256Hex(token);
+  const { run } = getDb();
+  await run("UPDATE sessions SET active_tenant_id=? WHERE token_hash=?", [tenantId, tokenHash]);
+}
+
+// Deletes the session and clears the cookie. Used by /logout.
+export async function destroySession() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("qa_sess")?.value;
+  if (token) {
+    const tokenHash = await sha256Hex(token);
+    const { run } = getDb();
+    await run("DELETE FROM sessions WHERE token_hash=?", [tokenHash]);
+  }
+  cookieStore.delete("qa_sess");
+}
+
+// Helper to format role names for display.
+export function roleLabel(role: string): string {
+  if (role === "SCHOOL_ADMIN") return "School Admin";
+  if (role === "TEACHER") return "Teacher";
+  if (role === "STUDENT") return "Student";
+  return role;
+}
+
+// Checks auth and redirects to /login if not logged in.
+// Use this at the top of any protected page.
+export async function requireAuth() {
+  const auth = await getAuth();
+  if (!auth.user) {
+    const { redirect } = await import("next/navigation");
+    redirect("/login");
+  }
+  return auth;
+}

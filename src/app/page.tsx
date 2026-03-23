@@ -1,14 +1,41 @@
-// This is the homepage — it renders when someone visits the root URL "/".
-// For now it's just a placeholder to verify the app is working.
-// We'll replace this with the real login/dashboard page later.
+// src/app/page.tsx
+// Root page — redirects users to the right place based on their role.
+// Same logic as the old "/" route in auth.js.
+//
+// Flow:
+// 1. Not logged in → /login
+// 2. System admin → /sys
+// 3. No memberships → /no-access
+// 4. No active school → /choose-school (or auto-select if only one)
+// 5. Active school → /school, /teacher, or /student based on role
 
-export default function Home() {
-  return (
-    <main className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold text-teal-700">QAcademy</h1>
-      <p className="mt-2 text-gray-600">
-        Next.js is running. Stack migration in progress.
-      </p>
-    </main>
-  );
+import { redirect } from "next/navigation";
+import { getAuth, pickActiveMembership, setActiveTenant } from "@/lib/auth";
+
+export default async function Home() {
+  const auth = await getAuth();
+
+  if (!auth.user) redirect("/login");
+  if (auth.user.is_system_admin === 1) redirect("/sys");
+  if (!auth.memberships.length) redirect("/no-access");
+
+  const active = pickActiveMembership(auth);
+
+  if (!active) {
+    if (auth.memberships.length === 1) {
+      await setActiveTenant(auth.memberships[0].tenant_id);
+      // Re-check after setting
+      const role = auth.memberships[0].role;
+      if (role === "SCHOOL_ADMIN") redirect("/school");
+      if (role === "TEACHER") redirect("/teacher");
+      if (role === "STUDENT") redirect("/student");
+      redirect("/no-access");
+    }
+    redirect("/choose-school");
+  }
+
+  if (active.role === "SCHOOL_ADMIN") redirect("/school");
+  if (active.role === "TEACHER") redirect("/teacher");
+  if (active.role === "STUDENT") redirect("/student");
+  redirect("/no-access");
 }
