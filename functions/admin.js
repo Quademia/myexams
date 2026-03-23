@@ -71,6 +71,14 @@ export async function handleAdminRequest(ctx) {
       return scope || "";
     }
 
+    function describeCode(scope, role, courseTitle) {
+      if (scope === "TENANT_ROLE" && role === "STUDENT") return "Students \u2192 join school";
+      if (scope === "TENANT_ROLE" && role === "TEACHER") return "Teachers \u2192 join school";
+      if (scope === "COURSE_ENROLL" && courseTitle) return `Students \u2192 enrol in ${courseTitle}`;
+      if (scope === "COURSE_TEACHER" && courseTitle) return `Teachers \u2192 assign to ${courseTitle}`;
+      return scopeLabel(scope) + " (" + roleLabel(role) + ")";
+    }
+
     async function loadJoinCodeByPlain(codePlain) {
       const h = await joinCodeHash(codePlain);
       const jc = await first(
@@ -374,70 +382,14 @@ export async function handleAdminRequest(ctx) {
       if (active.role !== "SCHOOL_ADMIN") return redirect("/");
 
       const tenantId = active.tenant_id;
-
-      const members = await all(
-        `SELECT u.id,u.name,u.email,m.id AS membership_id,m.role
-         FROM memberships m JOIN users u ON u.id=m.user_id
-         WHERE m.tenant_id=? AND m.status='ACTIVE' AND u.status='ACTIVE'
-         ORDER BY m.role ASC, u.name ASC`,
-        [tenantId]
-      );
-
       const courses = await all("SELECT id,title,status FROM courses WHERE tenant_id=? ORDER BY title ASC", [tenantId]);
-      const teachers = members.filter((x) => x.role === "TEACHER");
-      const students = members.filter((x) => x.role === "STUDENT");
 
-      const teacherOptions = teachers.map((t) =>
-        `<option value="${escapeAttr(t.id)}">${escapeHtml(t.name)} (${escapeHtml(t.email)})</option>`
-      ).join("");
-
-      const studentOptions = students.map((s) =>
-        `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.email)})</option>`
-      ).join("");
-
-      const courseOptions = courses.filter((c) => c.status === "ACTIVE").map((c) =>
-        `<option value="${escapeAttr(c.id)}">${escapeHtml(c.title)}</option>`
-      ).join("");
-
-      const rosterBlocks = [];
-      for (const c of courses.filter((x) => x.status === "ACTIVE")) {
-        const tRows = await all(
-          `SELECT u.id,u.name,u.email FROM course_teachers ct JOIN users u ON u.id=ct.user_id
-           WHERE ct.course_id=? ORDER BY u.name ASC`, [c.id]
-        );
-        const sRows = await all(
-          `SELECT u.id,u.name,u.email FROM enrollments e JOIN users u ON u.id=e.user_id
-           WHERE e.course_id=? ORDER BY u.name ASC`, [c.id]
-        );
-
-        const tList = tRows.map((u) => `
-          <li>${escapeHtml(u.name)} <span class="muted small">(${escapeHtml(u.email)})</span>
-            <form style="display:inline" method="post" action="/school-unassign-teacher" onsubmit="return confirm('Unassign teacher?')">
-              <input type="hidden" name="course_id" value="${escapeAttr(c.id)}"/>
-              <input type="hidden" name="user_id" value="${escapeAttr(u.id)}"/>
-              <button class="btn3" type="submit" style="margin-left:8px;padding:6px 10px">Remove</button>
-            </form>
-          </li>`).join("");
-
-        const sList = sRows.map((u) => `
-          <li>${escapeHtml(u.name)} <span class="muted small">(${escapeHtml(u.email)})</span>
-            <form style="display:inline" method="post" action="/school-unenrol-student" onsubmit="return confirm('Remove student?')">
-              <input type="hidden" name="course_id" value="${escapeAttr(c.id)}"/>
-              <input type="hidden" name="user_id" value="${escapeAttr(u.id)}"/>
-              <button class="btn3" type="submit" style="margin-left:8px;padding:6px 10px">Remove</button>
-            </form>
-          </li>`).join("");
-
-        rosterBlocks.push(`
-          <div class="card">
-            <h2>${escapeHtml(c.title)}</h2>
-            <div class="row">
-              <div><h3 style="margin:0 0 6px;font-size:14px">Teachers (${tRows.length})</h3><ul>${tList || `<li class="muted">None</li>`}</ul></div>
-              <div><h3 style="margin:0 0 6px;font-size:14px">Students (${sRows.length})</h3><ul>${sList || `<li class="muted">None</li>`}</ul></div>
-            </div>
-          </div>
-        `);
-      }
+      const courseRows = courses.map((c) => `
+        <tr>
+          <td><a href="/school-course?course_id=${escapeAttr(c.id)}"><b>${escapeHtml(c.title)}</b></a></td>
+          <td><span class="pill">${escapeHtml(c.status)}</span></td>
+        </tr>
+      `).join("");
 
       return page(`
         ${schoolHeader(r, active)}
@@ -445,7 +397,10 @@ export async function handleAdminRequest(ctx) {
 
         <div class="card">
           <h2>Courses</h2>
-          <ul>${courses.map((c) => `<li><b>${escapeHtml(c.title)}</b> <span class="muted">(${escapeHtml(c.status)})</span></li>`).join("") || "<li class='muted'>No courses yet</li>"}</ul>
+          <table class="table">
+            <thead><tr><th>Title</th><th>Status</th></tr></thead>
+            <tbody>${courseRows || `<tr><td colspan="2" class="muted">No courses yet</td></tr>`}</tbody>
+          </table>
         </div>
 
         <div class="card">
@@ -455,34 +410,320 @@ export async function handleAdminRequest(ctx) {
             <button type="submit">Create course</button>
           </form>
         </div>
+      `);
+    }
+
+    // =============================
+    // School Admin — Course Detail
+    // =============================
+    if (path === "/school-course") {
+      const r = await requireLogin();
+      if (!r.ok) return r.res;
+      const active = pickActiveMembership(r);
+      if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
+
+      const courseId = url.searchParams.get("course_id") || "";
+      if (!courseId) return redirect("/school-courses");
+
+      const course = await first("SELECT * FROM courses WHERE id=? AND tenant_id=?", [courseId, active.tenant_id]);
+      if (!course) return redirect("/school-courses");
+
+      const tab = url.searchParams.get("tab") || "details";
+      const tabs = ["details", "teachers", "students", "classes", "join-codes"];
+      const tabLabels = { "details": "Details", "teachers": "Teachers", "students": "Students", "classes": "Classes", "join-codes": "Join Codes" };
+      const tabNav = tabs.map((t) => {
+        const active_ = t === tab;
+        const label = tabLabels[t] || t;
+        return `<a href="/school-course?course_id=${escapeAttr(courseId)}&tab=${t}" style="padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap${active_ ? ";background:rgba(0,0,0,.07);font-weight:700" : ""}">${label}</a>`;
+      }).join("");
+
+      let tabContent = "";
+
+      // --- Details tab ---
+      if (tab === "details") {
+        tabContent = `
+          <div class="card">
+            <h2>Course Details</h2>
+            <form method="post" action="/school-update-course">
+              <input type="hidden" name="course_id" value="${escapeAttr(courseId)}"/>
+              <label>Title</label>
+              <input name="title" value="${escapeAttr(course.title)}" required />
+              <label>Status</label>
+              <select name="status">
+                <option value="ACTIVE"${course.status === "ACTIVE" ? " selected" : ""}>Active</option>
+                <option value="ARCHIVED"${course.status === "ARCHIVED" ? " selected" : ""}>Archived</option>
+              </select>
+              <button type="submit">Save changes</button>
+            </form>
+          </div>
+        `;
+      }
+
+      // --- Teachers tab ---
+      if (tab === "teachers") {
+        const assignedTeachers = await all(
+          `SELECT u.id, u.name, u.email FROM course_teachers ct JOIN users u ON u.id=ct.user_id
+           WHERE ct.course_id=? ORDER BY u.name ASC`, [courseId]
+        );
+        const assignedIds = new Set(assignedTeachers.map((t) => t.id));
+
+        const allTeachers = await all(
+          `SELECT u.id, u.name, u.email FROM memberships m JOIN users u ON u.id=m.user_id
+           WHERE m.tenant_id=? AND m.role IN ('TEACHER','SCHOOL_ADMIN') AND m.status='ACTIVE' AND u.status='ACTIVE'
+           ORDER BY u.name ASC`, [active.tenant_id]
+        );
+        const availableTeachers = allTeachers.filter((t) => !assignedIds.has(t.id));
+
+        const teacherRows = assignedTeachers.map((t) => `
+          <tr>
+            <td><b>${escapeHtml(t.name)}</b></td>
+            <td><span class="muted small">${escapeHtml(t.email)}</span></td>
+            <td>
+              <form method="post" action="/school-unassign-teacher" onsubmit="return confirm('Unassign this teacher?')">
+                <input type="hidden" name="course_id" value="${escapeAttr(courseId)}"/>
+                <input type="hidden" name="user_id" value="${escapeAttr(t.id)}"/>
+                <button type="submit" class="btn3">Remove</button>
+              </form>
+            </td>
+          </tr>
+        `).join("");
+
+        const teacherOptions = availableTeachers.map((t) =>
+          `<option value="${escapeAttr(t.id)}">${escapeHtml(t.name)} (${escapeHtml(t.email)})</option>`
+        ).join("");
+
+        tabContent = `
+          <div class="card">
+            <h2>Teachers (${assignedTeachers.length})</h2>
+            <table class="table">
+              <thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
+              <tbody>${teacherRows || `<tr><td colspan="3" class="muted">No teachers assigned yet</td></tr>`}</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Assign Teacher</h2>
+            ${availableTeachers.length > 0 ? `
+            <form method="post" action="/school-assign-teacher">
+              <input type="hidden" name="course_id" value="${escapeAttr(courseId)}"/>
+              <label>Teacher</label>
+              <select name="teacher_id" required>${teacherOptions}</select>
+              <button type="submit">Assign teacher</button>
+            </form>
+            ` : `<p class="muted">All teachers are already assigned to this course.</p>`}
+          </div>
+        `;
+      }
+
+      // --- Students tab ---
+      if (tab === "students") {
+        const enrolledStudents = await all(
+          `SELECT u.id, u.name, u.email FROM enrollments e JOIN users u ON u.id=e.user_id
+           WHERE e.course_id=? ORDER BY u.name ASC`, [courseId]
+        );
+        const enrolledIds = new Set(enrolledStudents.map((s) => s.id));
+
+        const allStudents = await all(
+          `SELECT u.id, u.name, u.email FROM memberships m JOIN users u ON u.id=m.user_id
+           WHERE m.tenant_id=? AND m.role='STUDENT' AND m.status='ACTIVE' AND u.status='ACTIVE'
+           ORDER BY u.name ASC`, [active.tenant_id]
+        );
+        const availableStudents = allStudents.filter((s) => !enrolledIds.has(s.id));
+
+        const studentRows = enrolledStudents.map((s) => `
+          <tr>
+            <td><b>${escapeHtml(s.name)}</b></td>
+            <td><span class="muted small">${escapeHtml(s.email)}</span></td>
+            <td>
+              <form method="post" action="/school-unenrol-student" onsubmit="return confirm('Remove this student?')">
+                <input type="hidden" name="course_id" value="${escapeAttr(courseId)}"/>
+                <input type="hidden" name="user_id" value="${escapeAttr(s.id)}"/>
+                <button type="submit" class="btn3">Remove</button>
+              </form>
+            </td>
+          </tr>
+        `).join("");
+
+        const studentOptions = availableStudents.map((s) =>
+          `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.email)})</option>`
+        ).join("");
+
+        tabContent = `
+          <div class="card">
+            <h2>Students (${enrolledStudents.length})</h2>
+            <table class="table">
+              <thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
+              <tbody>${studentRows || `<tr><td colspan="3" class="muted">No students enrolled yet</td></tr>`}</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Enrol Student</h2>
+            ${availableStudents.length > 0 ? `
+            <form method="post" action="/school-enrol-student">
+              <input type="hidden" name="course_id" value="${escapeAttr(courseId)}"/>
+              <label>Student</label>
+              <select name="student_id" required>${studentOptions}</select>
+              <button type="submit">Enrol student</button>
+            </form>
+            ` : `<p class="muted">All students are already enrolled in this course.</p>`}
+          </div>
+        `;
+      }
+
+      // --- Classes tab ---
+      if (tab === "classes") {
+        const allClasses = await all(
+          `SELECT id, name, year_group FROM classes WHERE tenant_id=? AND status='ACTIVE' ORDER BY name ASC`,
+          [active.tenant_id]
+        );
+
+        // For each class, check how many of its students are enrolled in this course
+        const classRows = [];
+        for (const cls of allClasses) {
+          const totalInClass = await first(
+            `SELECT COUNT(*) AS cnt FROM class_students WHERE class_id=?`, [cls.id]
+          );
+          const enrolledFromClass = await first(
+            `SELECT COUNT(*) AS cnt FROM class_students cs
+             JOIN enrollments e ON e.user_id=cs.user_id AND e.course_id=?
+             WHERE cs.class_id=?`, [courseId, cls.id]
+          );
+          if (enrolledFromClass.cnt > 0) {
+            classRows.push(`
+              <tr>
+                <td><b>${escapeHtml(cls.name)}</b>${cls.year_group ? ` <span class="muted small">(${escapeHtml(cls.year_group)})</span>` : ""}</td>
+                <td>${enrolledFromClass.cnt} / ${totalInClass.cnt} students enrolled</td>
+                <td>
+                  <form method="post" action="/school-course-unenrol-class" onsubmit="return confirm('Remove this class from the course? This will unenrol ${enrolledFromClass.cnt} student(s).')">
+                    <input type="hidden" name="course_id" value="${escapeAttr(courseId)}"/>
+                    <input type="hidden" name="class_id" value="${escapeAttr(cls.id)}"/>
+                    <button type="submit" class="btn3">Remove</button>
+                  </form>
+                </td>
+              </tr>
+            `);
+          }
+        }
+
+        const classOptions = allClasses.map((c) =>
+          `<option value="${escapeAttr(c.id)}">${escapeHtml(c.name)}${c.year_group ? ` (${escapeHtml(c.year_group)})` : ""}</option>`
+        ).join("");
+
+        tabContent = `
+          <div class="card">
+            <h2>Classes enrolled in this course</h2>
+            <table class="table">
+              <thead><tr><th>Class</th><th>Enrolment</th><th></th></tr></thead>
+              <tbody>${classRows.join("") || `<tr><td colspan="3" class="muted">No classes enrolled yet</td></tr>`}</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Enrol a Class</h2>
+            <p class="muted small">This will enrol all students currently in the class into this course. Students already enrolled will be skipped.</p>
+            ${allClasses.length > 0 ? `
+            <form method="post" action="/school-course-enrol-class">
+              <input type="hidden" name="course_id" value="${escapeAttr(courseId)}"/>
+              <label>Class</label>
+              <select name="class_id" required>${classOptions}</select>
+              <button type="submit">Enrol class</button>
+            </form>
+            ` : `<p class="muted">No active classes found.</p>`}
+          </div>
+        `;
+      }
+
+      // --- Join Codes tab ---
+      if (tab === "join-codes") {
+        const courseCodes = await all(
+          `SELECT jc.*, c.title AS course_title FROM join_codes jc
+           LEFT JOIN courses c ON c.id=jc.course_id
+           WHERE jc.tenant_id=? AND jc.course_id=? AND jc.revoked=0
+           ORDER BY jc.created_at DESC`,
+          [active.tenant_id, courseId]
+        );
+        const activeCourseCodes = courseCodes.filter((c) => !isIsoInPast(c.expires_at));
+        const returnTo = `/school-course?course_id=${courseId}&tab=join-codes`;
+
+        const codeRows = activeCourseCodes.map((c) => `
+          <tr>
+            <td><b>${escapeHtml(describeCode(c.scope, c.role, c.course_title))}</b></td>
+            <td class="small">
+              Expires: ${escapeHtml(fmtISO(c.expires_at))}<br/>
+              Uses: ${escapeHtml(c.uses_approved)}/${escapeHtml(c.max_uses)}
+            </td>
+            <td><span class="pill">${Number(c.auto_approve) === 1 ? "Auto-approve" : "Needs approval"}</span></td>
+            <td>
+              <form method="post" action="/school-revoke-code" onsubmit="return confirm('Revoke this code?')">
+                <input type="hidden" name="code_id" value="${escapeAttr(c.id)}"/>
+                <input type="hidden" name="return_to" value="${escapeAttr(returnTo)}"/>
+                <button type="submit" class="btn3">Revoke</button>
+              </form>
+            </td>
+          </tr>
+        `).join("");
+
+        tabContent = `
+          <div class="card">
+            <h2>Join Codes for this Course</h2>
+            <table class="table">
+              <thead><tr><th>Description</th><th>Limits</th><th>Approval</th><th></th></tr></thead>
+              <tbody>${codeRows || `<tr><td colspan="4" class="muted">No active codes for this course</td></tr>`}</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Create Code for this Course</h2>
+            <form method="post" action="/school-create-code">
+              <input type="hidden" name="action" value="course"/>
+              <input type="hidden" name="course_id" value="${escapeAttr(courseId)}"/>
+              <input type="hidden" name="return_to" value="${escapeAttr(returnTo)}"/>
+              <label>Who is this code for?</label>
+              <select name="who" required>
+                <option value="student">Student</option>
+                <option value="teacher">Teacher</option>
+              </select>
+              <div class="row">
+                <div>
+                  <label>Auto-approve</label>
+                  <select name="auto_approve">
+                    <option value="0">No (admin approval required)</option>
+                    <option value="1">Yes (instant)</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Expiry (days)</label>
+                  <input name="exp_days" type="number" min="1" value="${JOIN_CODE_DEFAULT_EXP_DAYS}" required />
+                </div>
+              </div>
+              <label>Max uses</label>
+              <input name="max_uses" type="number" min="1" value="${JOIN_CODE_DEFAULT_MAX_USES}" required />
+              <button type="submit">Create code</button>
+            </form>
+          </div>
+        `;
+      }
+
+      return page(`
+        ${schoolHeader(r, active)}
+        ${schoolNav("/school-courses")}
 
         <div class="card">
-          <h2>Assign Teacher to Course (manual)</h2>
-          <form method="post" action="/school-assign-teacher">
-            <label>Course</label>
-            <select name="course_id" required>${courseOptions || "<option value=''>Create a course first</option>"}</select>
-            <label>Teacher</label>
-            <select name="teacher_id" required>${teacherOptions || "<option value=''>Add a teacher first</option>"}</select>
-            <button type="submit">Assign teacher</button>
-          </form>
+          <div class="topbar">
+            <div>
+              <h1>${escapeHtml(course.title)}</h1>
+              <div class="muted">
+                <span class="pill">${escapeHtml(course.status)}</span>
+              </div>
+            </div>
+            <div class="actions">
+              <a href="/school-courses">← Back to courses</a>
+            </div>
+          </div>
         </div>
 
-        <div class="card">
-          <h2>Enrol Student to Course (manual)</h2>
-          <form method="post" action="/school-enrol-student">
-            <label>Course</label>
-            <select name="course_id" required>${courseOptions || "<option value=''>Create a course first</option>"}</select>
-            <label>Student</label>
-            <select name="student_id" required>${studentOptions || "<option value=''>Add a student first</option>"}</select>
-            <button type="submit">Enrol student</button>
-          </form>
+        <div class="card" style="display:flex;flex-wrap:wrap;gap:4px;padding:10px 14px">
+          ${tabNav}
         </div>
 
-        <div class="card">
-          <h2>Course rosters</h2>
-          <p class="muted small">Teachers assigned + students enrolled, per course.</p>
-        </div>
-        ${rosterBlocks.join("")}
+        ${tabContent}
       `);
     }
 
@@ -561,69 +802,250 @@ export async function handleAdminRequest(ctx) {
       if (active.role !== "SCHOOL_ADMIN") return redirect("/");
 
       const tenantId = active.tenant_id;
-
-      const members = await all(
-        `SELECT u.id,u.name,u.email,m.id AS membership_id,m.role
-         FROM memberships m JOIN users u ON u.id=m.user_id
-         WHERE m.tenant_id=? AND m.status='ACTIVE' AND u.status='ACTIVE'
-         ORDER BY m.role ASC, u.name ASC`,
-        [tenantId]
-      );
-
-      const memberRows = members.map((m) => {
-        const self = m.id === r.user.id;
-        return `
-          <tr>
-            <td><b>${escapeHtml(m.name)}</b><br/><span class="muted small">${escapeHtml(m.email)}</span>${self ? `<div class="pill">You</div>` : ``}</td>
-            <td>
-              <form method="post" action="/school-update-member-role" class="actions">
-                <input type="hidden" name="user_id" value="${escapeAttr(m.id)}"/>
-                <select name="role" required>
-                  <option value="STUDENT" ${m.role === "STUDENT" ? "selected" : ""}>Student</option>
-                  <option value="TEACHER" ${m.role === "TEACHER" ? "selected" : ""}>Teacher</option>
-                  <option value="SCHOOL_ADMIN" ${m.role === "SCHOOL_ADMIN" ? "selected" : ""}>School Admin</option>
-                </select>
-                <button type="submit" class="btn2">Update</button>
-              </form>
-            </td>
-            <td>
-              <form method="post" action="/school-remove-member" onsubmit="return confirm('Remove this member from the school?')">
-                <input type="hidden" name="user_id" value="${escapeAttr(m.id)}"/>
-                <button type="submit" class="btn3" ${self ? "disabled title='Cannot remove yourself'" : ""}>Remove</button>
-              </form>
-            </td>
-          </tr>
-        `;
+      const tab = url.searchParams.get("tab") || "members";
+      const tabItems = ["members", "add"];
+      const tabLabels = { "members": "Members", "add": "Add Person" };
+      const tabNav = tabItems.map((t) => {
+        const active_ = t === tab;
+        const label = tabLabels[t] || t;
+        return `<a href="/school-people?tab=${t}" style="padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap${active_ ? ";background:rgba(0,0,0,.07);font-weight:700" : ""}">${label}</a>`;
       }).join("");
+
+      let tabContent = "";
+
+      // --- Members tab ---
+      if (tab === "members") {
+        const filterRole = url.searchParams.get("role") || "";
+        const filterCourseId = url.searchParams.get("course_id") || "";
+        const filterClassId = url.searchParams.get("class_id") || "";
+
+        // Build filtered member query
+        let sql = `SELECT DISTINCT u.id, u.name, u.email, m.role
+                   FROM memberships m JOIN users u ON u.id=m.user_id
+                   WHERE m.tenant_id=? AND m.status='ACTIVE' AND u.status='ACTIVE'`;
+        const params = [tenantId];
+
+        if (filterRole) {
+          sql += ` AND m.role=?`;
+          params.push(filterRole);
+        }
+        if (filterCourseId) {
+          sql += ` AND (EXISTS (SELECT 1 FROM enrollments e WHERE e.user_id=m.user_id AND e.course_id=?)
+                    OR EXISTS (SELECT 1 FROM course_teachers ct WHERE ct.user_id=m.user_id AND ct.course_id=?))`;
+          params.push(filterCourseId, filterCourseId);
+        }
+        if (filterClassId) {
+          sql += ` AND EXISTS (SELECT 1 FROM class_students cs WHERE cs.user_id=m.user_id AND cs.class_id=?)`;
+          params.push(filterClassId);
+        }
+        sql += ` ORDER BY m.role ASC, u.name ASC`;
+
+        const members = await all(sql, params);
+        const memberIds = members.map((m) => m.id);
+
+        // Batch context queries — courses and classes per member
+        const coursesByUser = {};
+        const classesByUser = {};
+
+        if (memberIds.length > 0) {
+          const placeholders = memberIds.map(() => "?").join(",");
+
+          const enrolledCourses = await all(
+            `SELECT e.user_id, c.title FROM enrollments e JOIN courses c ON c.id=e.course_id
+             WHERE e.user_id IN (${placeholders}) AND c.status='ACTIVE' ORDER BY c.title ASC`,
+            memberIds
+          );
+          const taughtCourses = await all(
+            `SELECT ct.user_id, c.title FROM course_teachers ct JOIN courses c ON c.id=ct.course_id
+             WHERE ct.user_id IN (${placeholders}) AND c.status='ACTIVE' ORDER BY c.title ASC`,
+            memberIds
+          );
+          const memberClasses = await all(
+            `SELECT cs.user_id, cl.name FROM class_students cs JOIN classes cl ON cl.id=cs.class_id
+             WHERE cs.user_id IN (${placeholders}) AND cl.status='ACTIVE' ORDER BY cl.name ASC`,
+            memberIds
+          );
+
+          for (const row of enrolledCourses) {
+            if (!coursesByUser[row.user_id]) coursesByUser[row.user_id] = [];
+            coursesByUser[row.user_id].push(row.title);
+          }
+          for (const row of taughtCourses) {
+            if (!coursesByUser[row.user_id]) coursesByUser[row.user_id] = [];
+            if (!coursesByUser[row.user_id].includes(row.title)) coursesByUser[row.user_id].push(row.title);
+          }
+          for (const row of memberClasses) {
+            if (!classesByUser[row.user_id]) classesByUser[row.user_id] = [];
+            classesByUser[row.user_id].push(row.name);
+          }
+        }
+
+        // Filter options
+        const allCourses = await all("SELECT id, title FROM courses WHERE tenant_id=? AND status='ACTIVE' ORDER BY title ASC", [tenantId]);
+        const allClasses = await all("SELECT id, name FROM classes WHERE tenant_id=? AND status='ACTIVE' ORDER BY name ASC", [tenantId]);
+
+        const roleFilterOptions = [
+          `<option value="">All roles</option>`,
+          `<option value="STUDENT"${filterRole === "STUDENT" ? " selected" : ""}>Student</option>`,
+          `<option value="TEACHER"${filterRole === "TEACHER" ? " selected" : ""}>Teacher</option>`,
+          `<option value="SCHOOL_ADMIN"${filterRole === "SCHOOL_ADMIN" ? " selected" : ""}>School Admin</option>`,
+        ].join("");
+
+        const courseFilterOptions = [`<option value="">All courses</option>`].concat(
+          allCourses.map((c) => `<option value="${escapeAttr(c.id)}"${filterCourseId === c.id ? " selected" : ""}>${escapeHtml(c.title)}</option>`)
+        ).join("");
+
+        const classFilterOptions = [`<option value="">All classes</option>`].concat(
+          allClasses.map((c) => `<option value="${escapeAttr(c.id)}"${filterClassId === c.id ? " selected" : ""}>${escapeHtml(c.name)}</option>`)
+        ).join("");
+
+        const memberRows = members.map((m) => {
+          const self = m.id === r.user.id;
+          const userCourses = coursesByUser[m.id] || [];
+          const userClasses = classesByUser[m.id] || [];
+          const contextPills = [
+            ...userCourses.map((t) => `<span class="pill" style="font-size:11px">${escapeHtml(t)}</span>`),
+            ...userClasses.map((n) => `<span class="pill" style="font-size:11px;background:rgba(0,0,0,.05)">${escapeHtml(n)}</span>`),
+          ].join(" ");
+
+          return `
+            <tr>
+              <td>
+                <b>${escapeHtml(m.name)}</b>${self ? ` <span class="pill">You</span>` : ``}<br/>
+                <span class="muted small">${escapeHtml(m.email)}</span>
+                ${contextPills ? `<div style="margin-top:4px">${contextPills}</div>` : ""}
+              </td>
+              <td>
+                <form method="post" action="/school-update-member-role" class="actions">
+                  <input type="hidden" name="user_id" value="${escapeAttr(m.id)}"/>
+                  <select name="role" required>
+                    <option value="STUDENT" ${m.role === "STUDENT" ? "selected" : ""}>Student</option>
+                    <option value="TEACHER" ${m.role === "TEACHER" ? "selected" : ""}>Teacher</option>
+                    <option value="SCHOOL_ADMIN" ${m.role === "SCHOOL_ADMIN" ? "selected" : ""}>School Admin</option>
+                  </select>
+                  <button type="submit" class="btn2">Update</button>
+                </form>
+              </td>
+              <td>
+                <form method="post" action="/school-remove-member" onsubmit="return confirm('Remove this member from the school?')">
+                  <input type="hidden" name="user_id" value="${escapeAttr(m.id)}"/>
+                  <button type="submit" class="btn3" ${self ? "disabled title='Cannot remove yourself'" : ""}>Remove</button>
+                </form>
+              </td>
+            </tr>
+          `;
+        }).join("");
+
+        tabContent = `
+          <div class="card">
+            <h2>Filter</h2>
+            <form method="get" action="/school-people">
+              <input type="hidden" name="tab" value="members"/>
+              <div class="row">
+                <div>
+                  <label>Role</label>
+                  <select name="role">${roleFilterOptions}</select>
+                </div>
+                <div>
+                  <label>Course</label>
+                  <select name="course_id">${courseFilterOptions}</select>
+                </div>
+                <div>
+                  <label>Class</label>
+                  <select name="class_id">${classFilterOptions}</select>
+                </div>
+              </div>
+              <button type="submit">Apply filters</button>
+            </form>
+          </div>
+          <div class="card">
+            <h2>Members (${members.length})</h2>
+            <table class="table">
+              <thead><tr><th>Member</th><th>Role</th><th></th></tr></thead>
+              <tbody>${memberRows || `<tr><td colspan="3" class="muted">No members match the filters</td></tr>`}</tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      // --- Add Person tab ---
+      if (tab === "add") {
+        const checkEmail = url.searchParams.get("email") || "";
+        const exists = url.searchParams.get("exists") || "";
+        const userName = url.searchParams.get("user_name") || "";
+
+        let addContent = "";
+
+        if (!checkEmail) {
+          // Step 1: email check form
+          addContent = `
+            <div class="card">
+              <h2>Add Person</h2>
+              <p class="muted small">Enter their email to check if they already have an account.</p>
+              <form method="post" action="/school-check-email">
+                <label>Email</label>
+                <input name="email" type="email" required placeholder="user@example.com" />
+                <button type="submit">Check email</button>
+              </form>
+            </div>
+          `;
+        } else if (exists === "1") {
+          // Step 2a: existing user — just assign role
+          addContent = `
+            <div class="card">
+              <h2>Add Existing User</h2>
+              <p>Found: <b>${escapeHtml(userName)}</b> (${escapeHtml(checkEmail)})</p>
+              <p class="muted small">This person already has an account. Just choose their role at this school.</p>
+              <form method="post" action="/school-add-existing-user">
+                <input type="hidden" name="email" value="${escapeAttr(checkEmail)}"/>
+                <label>Role</label>
+                <select name="role" required>
+                  <option value="STUDENT">Student</option>
+                  <option value="TEACHER">Teacher</option>
+                  <option value="SCHOOL_ADMIN">School Admin</option>
+                </select>
+                <button type="submit">Add to school</button>
+              </form>
+              <p style="margin-top:10px"><a href="/school-people?tab=add">Check a different email</a></p>
+            </div>
+          `;
+        } else {
+          // Step 2b: new user — full form
+          addContent = `
+            <div class="card">
+              <h2>Create New User</h2>
+              <p class="muted small">No account found for <b>${escapeHtml(checkEmail)}</b>. Fill in the details to create one.</p>
+              <form method="post" action="/school-add-user">
+                <input type="hidden" name="email" value="${escapeAttr(checkEmail)}"/>
+                <label>Full name</label>
+                <input name="name" required />
+                <label>Role</label>
+                <select name="role" required>
+                  <option value="STUDENT">Student</option>
+                  <option value="TEACHER">Teacher</option>
+                  <option value="SCHOOL_ADMIN">School Admin</option>
+                </select>
+                <label>Temporary password</label>
+                <input name="password" type="text" required minlength="6" />
+                <button type="submit">Create user + add to school</button>
+              </form>
+              <p style="margin-top:10px"><a href="/school-people?tab=add">Check a different email</a></p>
+            </div>
+          `;
+        }
+
+        tabContent = addContent;
+      }
 
       return page(`
         ${schoolHeader(r, active)}
         ${schoolNav("/school-people")}
 
-        <div class="card">
-          <h2>Members (manage roles / remove)</h2>
-          <table class="table">
-            <thead><tr><th>Member</th><th>Role</th><th>Remove</th></tr></thead>
-            <tbody>${memberRows || `<tr><td colspan="3" class="muted">No users yet</td></tr>`}</tbody>
-          </table>
+        <div class="card" style="display:flex;flex-wrap:wrap;gap:4px;padding:10px 14px">
+          ${tabNav}
         </div>
 
-        <div class="card">
-          <h2>Add User (manual)</h2>
-          <form method="post" action="/school-add-user">
-            <label>Full name</label><input name="name" required />
-            <label>Email</label><input name="email" type="email" required />
-            <label>Role</label>
-            <select name="role" required>
-              <option value="TEACHER">Teacher</option>
-              <option value="STUDENT">Student</option>
-              <option value="SCHOOL_ADMIN">School Admin</option>
-            </select>
-            <label>Temporary password (used only if this email is NEW)</label>
-            <input name="password" type="text" required />
-            <button type="submit">Create user + add to this school</button>
-          </form>
-        </div>
+        ${tabContent}
       `);
     }
 
@@ -653,32 +1075,23 @@ export async function handleAdminRequest(ctx) {
         [tenantId]
       );
 
-      const codesRows = codes.map((c) => {
-        const expired = isIsoInPast(c.expires_at);
-        const status = Number(c.revoked) === 1 ? "Revoked" : expired ? "Expired" : "Active";
-        return `
-          <tr>
-            <td>
-              <b>${escapeHtml(scopeLabel(c.scope))}</b><br/>
-              <span class="muted small">${escapeHtml(roleLabel(c.role))}${c.course_title ? ` • ${escapeHtml(c.course_title)}` : ""}</span>
-            </td>
-            <td class="small">
-              ${escapeHtml(fmtISO(c.expires_at))}<br/>
-              Uses: ${escapeHtml(c.uses_approved)}/${escapeHtml(c.max_uses)}<br/>
-              Auto: ${Number(c.auto_approve) === 1 ? "Yes" : "No"}
-            </td>
-            <td><span class="pill">${escapeHtml(status)}</span></td>
-            <td>
-              ${Number(c.revoked) === 1
-                ? `<span class="muted small">—</span>`
-                : `<form method="post" action="/school-revoke-code" onsubmit="return confirm('Revoke this code?')">
-                    <input type="hidden" name="code_id" value="${escapeAttr(c.id)}"/>
-                    <button type="submit" class="btn3">Revoke</button>
-                  </form>`}
-            </td>
-          </tr>
-        `;
-      }).join("");
+      const activeCodes = codes.filter((c) => Number(c.revoked) !== 1 && !isIsoInPast(c.expires_at));
+      const activeCodesRows = activeCodes.map((c) => `
+        <tr>
+          <td><b>${escapeHtml(describeCode(c.scope, c.role, c.course_title))}</b></td>
+          <td class="small">
+            Expires: ${escapeHtml(fmtISO(c.expires_at))}<br/>
+            Uses: ${escapeHtml(c.uses_approved)}/${escapeHtml(c.max_uses)}
+          </td>
+          <td><span class="pill">${Number(c.auto_approve) === 1 ? "Auto-approve" : "Needs approval"}</span></td>
+          <td>
+            <form method="post" action="/school-revoke-code" onsubmit="return confirm('Revoke this code?')">
+              <input type="hidden" name="code_id" value="${escapeAttr(c.id)}"/>
+              <button type="submit" class="btn3">Revoke</button>
+            </form>
+          </td>
+        </tr>
+      `).join("");
 
       const pending = await all(
         `SELECT jr.id, jr.type, jr.requested_role, jr.created_at,
@@ -701,12 +1114,15 @@ export async function handleAdminRequest(ctx) {
         [tenantId]
       );
 
-      const pendingRows = pending.map((x) => `
+      const pendingRows = pending.map((x) => {
+        const reqDesc = x.course_title
+          ? `${escapeHtml(roleLabel(x.requested_role))} access to ${escapeHtml(x.course_title)}`
+          : `${escapeHtml(roleLabel(x.requested_role))} access to school`;
+        return `
         <tr>
           <td><b>${escapeHtml(x.user_name)}</b><br/><span class="muted small">${escapeHtml(x.user_email)}</span></td>
           <td class="small">
-            ${escapeHtml(x.type)} • ${escapeHtml(roleLabel(x.requested_role))}
-            ${x.course_title ? `<br/>Course: ${escapeHtml(x.course_title)}` : ``}
+            ${reqDesc}
             <br/><span class="muted">Requested: ${escapeHtml(fmtISO(x.created_at))}</span>
           </td>
           <td>
@@ -722,38 +1138,52 @@ export async function handleAdminRequest(ctx) {
             </div>
           </td>
         </tr>
-      `).join("");
+      `;
+      }).join("");
 
-      const historyRows = history.map((x) => `
+      const historyRows = history.map((x) => {
+        const hDesc = x.course_title
+          ? `${escapeHtml(roleLabel(x.requested_role))} access to ${escapeHtml(x.course_title)}`
+          : `${escapeHtml(roleLabel(x.requested_role))} access to school`;
+        return `
         <tr>
           <td><b>${escapeHtml(x.user_name)}</b><br/><span class="muted small">${escapeHtml(x.user_email)}</span></td>
-          <td class="small">
-            ${escapeHtml(x.type)} • ${escapeHtml(roleLabel(x.requested_role))}
-            ${x.course_title ? `<br/>Course: ${escapeHtml(x.course_title)}` : ``}
-          </td>
+          <td class="small">${hDesc}</td>
           <td class="small">
             <span class="pill">${escapeHtml(x.status)}</span><br/>
             <span class="muted">Reviewed: ${escapeHtml(fmtISO(x.reviewed_at || ""))}</span>
           </td>
         </tr>
-      `).join("");
+      `;
+      }).join("");
 
       return page(`
         ${schoolHeader(r, active)}
         ${schoolNav("/school-join-codes")}
 
         <div class="card">
-          <h2>Join Codes</h2>
-          <p class="muted small">Codes are stored hashed; you'll see the plaintext code only at creation time.</p>
+          <h2>Active Codes</h2>
+          <p class="muted small">Codes are stored hashed — the plaintext is only shown at creation time.</p>
+          <table class="table">
+            <thead><tr><th>Description</th><th>Limits</th><th>Approval</th><th></th></tr></thead>
+            <tbody>${activeCodesRows || `<tr><td colspan="4" class="muted">No active codes</td></tr>`}</tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Create Code</h2>
           <form method="post" action="/school-create-code">
-            <label>Code type</label>
-            <select name="kind" required>
-              <option value="TENANT_STUDENT">Student (school-wide access)</option>
-              <option value="TENANT_TEACHER">Teacher (school-wide access)</option>
-              <option value="COURSE_ENROLL">Student (course enrol)</option>
-              <option value="COURSE_TEACHER">Teacher (course assignment)</option>
+            <label>Who is this code for?</label>
+            <select name="who" required>
+              <option value="student">Student</option>
+              <option value="teacher">Teacher</option>
             </select>
-            <label>Course (required for course codes)</label>
+            <label>What should happen when they join?</label>
+            <select name="action" required>
+              <option value="school">Join the school only</option>
+              <option value="course">Join the school AND enrol in a specific course</option>
+            </select>
+            <label>Course (only needed if enrolling in a course)</label>
             <select name="course_id">${courseOptions || "<option value=''>Create a course first</option>"}</select>
             <div class="row">
               <div>
@@ -772,25 +1202,21 @@ export async function handleAdminRequest(ctx) {
             <input name="max_uses" type="number" min="1" value="${JOIN_CODE_DEFAULT_MAX_USES}" required />
             <button type="submit">Create code</button>
           </form>
-          <h3 style="margin:14px 0 6px;font-size:14px">Existing codes</h3>
-          <table class="table">
-            <thead><tr><th>Type</th><th>Limits</th><th>Status</th><th></th></tr></thead>
-            <tbody>${codesRows || `<tr><td colspan="4" class="muted">No codes yet</td></tr>`}</tbody>
-          </table>
         </div>
 
         <div class="card">
-          <h2>Join Requests</h2>
-          <h3 style="margin:10px 0 6px;font-size:14px">Pending</h3>
+          <h2>Pending Requests</h2>
           <table class="table">
             <thead><tr><th>User</th><th>Request</th><th>Actions</th></tr></thead>
             <tbody>${pendingRows || `<tr><td colspan="3" class="muted">No pending requests</td></tr>`}</tbody>
           </table>
+          ${history.length > 0 ? `
           <h3 style="margin:14px 0 6px;font-size:14px">History</h3>
           <table class="table">
             <thead><tr><th>User</th><th>Request</th><th>Status</th></tr></thead>
-            <tbody>${historyRows || `<tr><td colspan="3" class="muted">No history yet</td></tr>`}</tbody>
+            <tbody>${historyRows}</tbody>
           </table>
+          ` : ""}
         </div>
       `);
     }
@@ -802,25 +1228,28 @@ export async function handleAdminRequest(ctx) {
       if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
 
       const f = await form();
-      const kind = (f.kind || "").trim();
+      const who = (f.who || "").trim();
+      const action = (f.action || "").trim();
       const courseId = (f.course_id || "").trim();
+      const returnTo = (f.return_to || "").trim();
       const autoApprove = Number(f.auto_approve || "0") === 1 ? 1 : 0;
       const expDays = Math.max(1, parseInt(f.exp_days || `${JOIN_CODE_DEFAULT_EXP_DAYS}`, 10) || JOIN_CODE_DEFAULT_EXP_DAYS);
       const maxUses = Math.max(1, parseInt(f.max_uses || `${JOIN_CODE_DEFAULT_MAX_USES}`, 10) || JOIN_CODE_DEFAULT_MAX_USES);
+      const backLink = returnTo || "/school-join-codes";
 
       let scope = "", role = "", course_id = null;
-      if (kind === "TENANT_STUDENT") { scope = "TENANT_ROLE"; role = "STUDENT"; }
-      else if (kind === "TENANT_TEACHER") { scope = "TENANT_ROLE"; role = "TEACHER"; }
-      else if (kind === "COURSE_ENROLL") { scope = "COURSE_ENROLL"; role = "STUDENT"; course_id = courseId || null; }
-      else if (kind === "COURSE_TEACHER") { scope = "COURSE_TEACHER"; role = "TEACHER"; course_id = courseId || null; }
-      else return redirect("/school-join-codes");
+      if (who === "student" && action === "school") { scope = "TENANT_ROLE"; role = "STUDENT"; }
+      else if (who === "student" && action === "course") { scope = "COURSE_ENROLL"; role = "STUDENT"; course_id = courseId || null; }
+      else if (who === "teacher" && action === "school") { scope = "TENANT_ROLE"; role = "TEACHER"; }
+      else if (who === "teacher" && action === "course") { scope = "COURSE_TEACHER"; role = "TEACHER"; course_id = courseId || null; }
+      else return redirect(backLink);
 
       if ((scope === "COURSE_ENROLL" || scope === "COURSE_TEACHER") && !course_id) {
-        return page(`<div class="card err"><b>Please select a course for course codes.</b></div><p><a href="/school-join-codes">Back</a></p>`, 400);
+        return page(`<div class="card err"><b>Please select a course.</b></div><p><a href="${escapeAttr(backLink)}">Back</a></p>`, 400);
       }
       if (scope === "COURSE_ENROLL" || scope === "COURSE_TEACHER") {
         const c = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [course_id, active.tenant_id]);
-        if (!c) return page(`<div class="card err"><b>Course not found or inactive.</b></div><p><a href="/school-join-codes">Back</a></p>`, 400);
+        if (!c) return page(`<div class="card err"><b>Course not found or inactive.</b></div><p><a href="${escapeAttr(backLink)}">Back</a></p>`, 400);
       }
 
       const expiresAt = new Date(Date.now() + expDays * 24 * 60 * 60 * 1000).toISOString();
@@ -851,7 +1280,7 @@ export async function handleAdminRequest(ctx) {
             <div style="font-size:28px;font-weight:900;letter-spacing:.08em">${escapeHtml(codePlain)}</div>
           </div>
           <p class="muted">Users go to <b>/join</b>, enter the code, then login/create account.</p>
-          <p class="actions"><a href="/school-join-codes">Back to Join Codes</a></p>
+          <p class="actions"><a href="${escapeAttr(backLink)}">Back</a></p>
         </div>
       `);
     }
@@ -863,9 +1292,10 @@ export async function handleAdminRequest(ctx) {
       if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
       const f = await form();
       const codeId = (f.code_id || "").trim();
+      const returnTo = (f.return_to || "").trim();
       if (!codeId) return redirect("/school-join-codes");
       await run("UPDATE join_codes SET revoked=1, updated_at=? WHERE id=? AND tenant_id=?", [nowISO(), codeId, active.tenant_id]);
-      return redirect("/school-join-codes");
+      return redirect(returnTo || "/school-join-codes");
     }
 
     if (path === "/school-approve-request" && request.method === "POST") {
@@ -959,6 +1389,66 @@ export async function handleAdminRequest(ctx) {
       return redirect("/school-people");
     }
 
+    // =============================
+    // Course: update (POST)
+    // =============================
+    if (path === "/school-update-course" && request.method === "POST") {
+      const r = await requireLogin();
+      if (!r.ok) return r.res;
+      const active = pickActiveMembership(r);
+      if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
+      const f = await form();
+      const courseId = (f.course_id || "").trim();
+      const title = (f.title || "").trim();
+      const status = (f.status || "").trim();
+      if (!courseId || !title) return redirect("/school-courses");
+      const c = await first("SELECT id FROM courses WHERE id=? AND tenant_id=?", [courseId, active.tenant_id]);
+      if (!c) return redirect("/school-courses");
+      if (!["ACTIVE", "ARCHIVED"].includes(status)) return redirect(`/school-course?course_id=${courseId}`);
+      await run("UPDATE courses SET title=?, status=?, updated_at=? WHERE id=?", [title, status, nowISO(), courseId]);
+      return redirect(`/school-course?course_id=${courseId}&tab=details`);
+    }
+
+    // =============================
+    // Course: enrol class (POST) — from course detail page
+    // =============================
+    if (path === "/school-course-enrol-class" && request.method === "POST") {
+      const r = await requireLogin();
+      if (!r.ok) return r.res;
+      const active = pickActiveMembership(r);
+      if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
+
+      const f = await form();
+      const classId = (f.class_id || "").trim();
+      const courseId = (f.course_id || "").trim();
+      if (!classId || !courseId) return redirect("/school-courses");
+
+      const cls = await first(`SELECT id FROM classes WHERE id=? AND tenant_id=?`, [classId, active.tenant_id]);
+      if (!cls) return redirect("/school-courses");
+
+      const course = await first(
+        `SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'`,
+        [courseId, active.tenant_id]
+      );
+      if (!course) return redirect(`/school-course?course_id=${courseId}&tab=classes`);
+
+      const classStudents = await all(`SELECT user_id FROM class_students WHERE class_id=?`, [classId]);
+      const ts = nowISO();
+      for (const s of classStudents) {
+        const enrolled = await first(
+          `SELECT 1 AS x FROM enrollments WHERE course_id=? AND user_id=?`,
+          [courseId, s.user_id]
+        );
+        if (!enrolled) {
+          await run(
+            `INSERT INTO enrollments (course_id, user_id, created_at) VALUES (?, ?, ?)`,
+            [courseId, s.user_id, ts]
+          );
+        }
+      }
+      return redirect(`/school-course?course_id=${courseId}&tab=classes`);
+    }
+
     if (path === "/school-unassign-teacher" && request.method === "POST") {
       const r = await requireLogin();
       if (!r.ok) return r.res;
@@ -971,7 +1461,7 @@ export async function handleAdminRequest(ctx) {
       const c = await first("SELECT id FROM courses WHERE id=? AND tenant_id=?", [courseId, active.tenant_id]);
       if (!c) return redirect("/school-courses");
       await run("DELETE FROM course_teachers WHERE course_id=? AND user_id=?", [courseId, userId]);
-      return redirect("/school-courses");
+      return redirect(`/school-course?course_id=${courseId}&tab=teachers`);
     }
 
     if (path === "/school-unenrol-student" && request.method === "POST") {
@@ -986,7 +1476,56 @@ export async function handleAdminRequest(ctx) {
       const c = await first("SELECT id FROM courses WHERE id=? AND tenant_id=?", [courseId, active.tenant_id]);
       if (!c) return redirect("/school-courses");
       await run("DELETE FROM enrollments WHERE course_id=? AND user_id=?", [courseId, userId]);
-      return redirect("/school-courses");
+      return redirect(`/school-course?course_id=${courseId}&tab=students`);
+    }
+
+    // =============================
+    // People: check email (POST)
+    // =============================
+    if (path === "/school-check-email" && request.method === "POST") {
+      const r = await requireLogin();
+      if (!r.ok) return r.res;
+      const active = pickActiveMembership(r);
+      if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
+      const f = await form();
+      const email = (f.email || "").toLowerCase().trim();
+      if (!email) return redirect("/school-people?tab=add");
+      const u = await first("SELECT id, name FROM users WHERE email=? AND status='ACTIVE'", [email]);
+      if (u) {
+        return redirect(`/school-people?tab=add&email=${encodeURIComponent(email)}&exists=1&user_name=${encodeURIComponent(u.name)}`);
+      }
+      return redirect(`/school-people?tab=add&email=${encodeURIComponent(email)}&exists=0`);
+    }
+
+    // =============================
+    // People: add existing user (POST)
+    // =============================
+    if (path === "/school-add-existing-user" && request.method === "POST") {
+      const r = await requireLogin();
+      if (!r.ok) return r.res;
+      const active = pickActiveMembership(r);
+      if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
+
+      const tenantId = active.tenant_id;
+      const f = await form();
+      const email = (f.email || "").toLowerCase().trim();
+      const role = (f.role || "");
+      if (!email || !["TEACHER", "STUDENT", "SCHOOL_ADMIN"].includes(role)) {
+        return redirect("/school-people?tab=add");
+      }
+
+      const u = await first("SELECT id FROM users WHERE email=? AND status='ACTIVE'", [email]);
+      if (!u) return redirect("/school-people?tab=add");
+
+      const ts = nowISO();
+      const m = await first("SELECT id,status FROM memberships WHERE user_id=? AND tenant_id=? ORDER BY created_at ASC LIMIT 1", [u.id, tenantId]);
+      if (!m) {
+        await run("INSERT INTO memberships (id,user_id,tenant_id,role,status,created_at,updated_at) VALUES (?,?,?,?,'ACTIVE',?,?)",
+          [uuid(), u.id, tenantId, role, ts, ts]);
+      } else {
+        await run("UPDATE memberships SET role=?, status='ACTIVE', updated_at=? WHERE id=?", [role, ts, m.id]);
+      }
+      return redirect("/school-people?tab=members");
     }
 
     if (path === "/school-add-user" && request.method === "POST") {
@@ -1027,7 +1566,7 @@ export async function handleAdminRequest(ctx) {
       } else {
         await run("UPDATE memberships SET role=?, status='ACTIVE', updated_at=? WHERE id=?", [role, ts, m.id]);
       }
-      return redirect("/school-people");
+      return redirect("/school-people?tab=members");
     }
 
     if (path === "/school-create-course" && request.method === "POST") {
@@ -1063,7 +1602,7 @@ export async function handleAdminRequest(ctx) {
       if (!ex) {
         await run("INSERT INTO course_teachers (course_id,user_id,created_at) VALUES (?,?,?)", [courseId, teacherId, nowISO()]);
       }
-      return redirect("/school-courses");
+      return redirect(`/school-course?course_id=${courseId}&tab=teachers`);
     }
 
     if (path === "/school-enrol-student" && request.method === "POST") {
@@ -1085,7 +1624,7 @@ export async function handleAdminRequest(ctx) {
       if (!ex) {
         await run("INSERT INTO enrollments (course_id,user_id,created_at) VALUES (?,?,?)", [courseId, studentId, nowISO()]);
       }
-      return redirect("/school-courses");
+      return redirect(`/school-course?course_id=${courseId}&tab=students`);
     }
 
     // =============================
@@ -1129,50 +1668,164 @@ export async function handleAdminRequest(ctx) {
       const cls = await first(`SELECT * FROM classes WHERE id=? AND tenant_id=?`, [classId, active.tenant_id]);
       if (!cls) return redirect("/school-classes");
 
-      const classStudents = await all(
-        `SELECT u.id, u.name, u.email
-         FROM class_students cs JOIN users u ON u.id = cs.user_id
-         WHERE cs.class_id=? ORDER BY u.name ASC`,
-        [classId]
-      );
+      const tab = url.searchParams.get("tab") || "details";
+      const tabs = ["details", "students", "courses"];
+      const tabNav = tabs.map((t) => {
+        const active_ = t === tab;
+        const label = t.charAt(0).toUpperCase() + t.slice(1);
+        return `<a href="/school-class?class_id=${escapeAttr(classId)}&tab=${t}" style="padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap${active_ ? ";background:rgba(0,0,0,.07);font-weight:700" : ""}">${label}</a>`;
+      }).join("");
 
-      const classStudentIds = new Set(classStudents.map((s) => s.id));
-      const allStudents = await all(
-        `SELECT u.id, u.name, u.email
-         FROM memberships m JOIN users u ON u.id = m.user_id
-         WHERE m.tenant_id=? AND m.role='STUDENT' AND m.status='ACTIVE' AND u.status='ACTIVE'
-         ORDER BY u.name ASC`,
-        [active.tenant_id]
-      );
-      const availableStudents = allStudents.filter((s) => !classStudentIds.has(s.id));
+      let tabContent = "";
 
-      const allCourses = await all(
-        `SELECT id, title FROM courses WHERE tenant_id=? AND status='ACTIVE' ORDER BY title ASC`,
-        [active.tenant_id]
-      );
-
-      const studentRows = classStudents.map((s) => `
-        <tr>
-          <td><b>${escapeHtml(s.name)}</b><br/><span class="muted small">${escapeHtml(s.email)}</span></td>
-          <td>
-            <form method="post" action="/school-class-remove-student" onsubmit="return confirm('Remove this student from the class?')">
+      // --- Details tab ---
+      if (tab === "details") {
+        const archiveLabel = cls.status === "ACTIVE" ? "Archive class" : "Unarchive class";
+        tabContent = `
+          <div class="card">
+            <h2>Class Details</h2>
+            <form method="post" action="/school-update-class">
               <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
-              <input type="hidden" name="user_id" value="${escapeAttr(s.id)}"/>
-              <button type="submit" class="btn3">Remove</button>
+              <label>Name</label>
+              <input name="name" value="${escapeAttr(cls.name)}" required />
+              <label>Year Group</label>
+              <input name="year_group" value="${escapeAttr(cls.year_group || "")}" />
+              <label>Academic Year</label>
+              <input name="academic_year" value="${escapeAttr(cls.academic_year || "")}" />
+              <label>Description</label>
+              <textarea name="description" rows="3">${escapeHtml(cls.description || "")}</textarea>
+              <button type="submit">Save changes</button>
             </form>
-          </td>
-        </tr>
-      `).join("");
+          </div>
+          <div class="card">
+            <h2>Archive</h2>
+            <form method="post" action="/school-class-archive" onsubmit="return confirm('${cls.status === "ACTIVE" ? "Archive" : "Unarchive"} this class?')">
+              <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
+              <button type="submit" class="btn3">${escapeHtml(archiveLabel)}</button>
+            </form>
+          </div>
+        `;
+      }
 
-      const addStudentOptions = availableStudents.map((s) =>
-        `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.email)})</option>`
-      ).join("");
+      // --- Students tab ---
+      if (tab === "students") {
+        const classStudents = await all(
+          `SELECT u.id, u.name, u.email
+           FROM class_students cs JOIN users u ON u.id = cs.user_id
+           WHERE cs.class_id=? ORDER BY u.name ASC`,
+          [classId]
+        );
 
-      const courseOptions = allCourses.map((c) =>
-        `<option value="${escapeAttr(c.id)}">${escapeHtml(c.title)}</option>`
-      ).join("");
+        const classStudentIds = new Set(classStudents.map((s) => s.id));
+        const allStudents = await all(
+          `SELECT u.id, u.name, u.email
+           FROM memberships m JOIN users u ON u.id = m.user_id
+           WHERE m.tenant_id=? AND m.role='STUDENT' AND m.status='ACTIVE' AND u.status='ACTIVE'
+           ORDER BY u.name ASC`,
+          [active.tenant_id]
+        );
+        const availableStudents = allStudents.filter((s) => !classStudentIds.has(s.id));
 
-      const archiveLabel = cls.status === "ACTIVE" ? "Archive class" : "Unarchive class";
+        const studentRows = classStudents.map((s) => `
+          <tr>
+            <td><b>${escapeHtml(s.name)}</b></td>
+            <td><span class="muted small">${escapeHtml(s.email)}</span></td>
+            <td>
+              <form method="post" action="/school-class-remove-student" onsubmit="return confirm('Remove this student from the class?')">
+                <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
+                <input type="hidden" name="user_id" value="${escapeAttr(s.id)}"/>
+                <button type="submit" class="btn3">Remove</button>
+              </form>
+            </td>
+          </tr>
+        `).join("");
+
+        const addStudentOptions = availableStudents.map((s) =>
+          `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.email)})</option>`
+        ).join("");
+
+        tabContent = `
+          <div class="card">
+            <h2>Students (${classStudents.length})</h2>
+            <table class="table">
+              <thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
+              <tbody>${studentRows || `<tr><td colspan="3" class="muted">No students in this class yet</td></tr>`}</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Add Student</h2>
+            ${availableStudents.length > 0 ? `
+            <form method="post" action="/school-class-add-student">
+              <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
+              <label>Student</label>
+              <select name="user_id" required>${addStudentOptions}</select>
+              <button type="submit">Add to class</button>
+            </form>
+            ` : `<p class="muted">All students in the school are already in this class.</p>`}
+          </div>
+        `;
+      }
+
+      // --- Courses tab ---
+      if (tab === "courses") {
+        const allCourses = await all(
+          `SELECT id, title FROM courses WHERE tenant_id=? AND status='ACTIVE' ORDER BY title ASC`,
+          [active.tenant_id]
+        );
+
+        const classStudentIds = await all(`SELECT user_id FROM class_students WHERE class_id=?`, [classId]);
+        const totalInClass = classStudentIds.length;
+
+        const courseRows = [];
+        for (const c of allCourses) {
+          const enrolledFromClass = await first(
+            `SELECT COUNT(*) AS cnt FROM class_students cs
+             JOIN enrollments e ON e.user_id=cs.user_id AND e.course_id=?
+             WHERE cs.class_id=?`, [c.id, classId]
+          );
+          if (enrolledFromClass.cnt > 0) {
+            courseRows.push(`
+              <tr>
+                <td><a href="/school-course?course_id=${escapeAttr(c.id)}&tab=classes"><b>${escapeHtml(c.title)}</b></a></td>
+                <td>${enrolledFromClass.cnt} / ${totalInClass} students enrolled</td>
+                <td>
+                  <form method="post" action="/school-class-unenrol-course" onsubmit="return confirm('Unlink this course from the class? This will unenrol ${enrolledFromClass.cnt} student(s).')">
+                    <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
+                    <input type="hidden" name="course_id" value="${escapeAttr(c.id)}"/>
+                    <button type="submit" class="btn3">Unlink</button>
+                  </form>
+                </td>
+              </tr>
+            `);
+          }
+        }
+
+        const courseOptions = allCourses.map((c) =>
+          `<option value="${escapeAttr(c.id)}">${escapeHtml(c.title)}</option>`
+        ).join("");
+
+        tabContent = `
+          <div class="card">
+            <h2>Courses linked to this class</h2>
+            <table class="table">
+              <thead><tr><th>Course</th><th>Enrolment</th><th></th></tr></thead>
+              <tbody>${courseRows.join("") || `<tr><td colspan="3" class="muted">No courses linked yet</td></tr>`}</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Enrol Class in Course</h2>
+            <p class="muted small">This will enrol all students currently in the class into the course. Students already enrolled will be skipped.</p>
+            ${allCourses.length > 0 ? `
+            <form method="post" action="/school-class-enrol-course">
+              <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
+              <label>Course</label>
+              <select name="course_id" required>${courseOptions}</select>
+              <button type="submit">Enrol all students in course</button>
+            </form>
+            ` : `<p class="muted">No active courses found.</p>`}
+          </div>
+        `;
+      }
 
       return page(`
         ${schoolHeader(r, active)}
@@ -1192,48 +1845,13 @@ export async function handleAdminRequest(ctx) {
               <a href="/school-classes">← Back to classes</a>
             </div>
           </div>
-          ${cls.description ? `<p class="muted" style="margin-top:8px">${escapeHtml(cls.description)}</p>` : ""}
         </div>
 
-        <div class="card">
-          <h2>Students (${classStudents.length})</h2>
-          <table class="table">
-            <thead><tr><th>Student</th><th></th></tr></thead>
-            <tbody>${studentRows || `<tr><td colspan="2" class="muted">No students in this class yet</td></tr>`}</tbody>
-          </table>
+        <div class="card" style="display:flex;flex-wrap:wrap;gap:4px;padding:10px 14px">
+          ${tabNav}
         </div>
 
-        <div class="card">
-          <h2>Add Student</h2>
-          ${availableStudents.length > 0 ? `
-          <form method="post" action="/school-class-add-student">
-            <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
-            <label>Student</label>
-            <select name="user_id" required>${addStudentOptions}</select>
-            <button type="submit">Add to class</button>
-          </form>
-          ` : `<p class="muted">All students in the school are already in this class.</p>`}
-        </div>
-
-        <div class="card">
-          <h2>Enrol Class in Course</h2>
-          ${allCourses.length > 0 ? `
-          <form method="post" action="/school-class-enrol-course">
-            <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
-            <label>Course</label>
-            <select name="course_id" required>${courseOptions}</select>
-            <button type="submit">Enrol all students in course</button>
-          </form>
-          ` : `<p class="muted">No active courses found.</p>`}
-        </div>
-
-        <div class="card">
-          <h2>Archive</h2>
-          <form method="post" action="/school-class-archive" onsubmit="return confirm('${cls.status === "ACTIVE" ? "Archive" : "Unarchive"} this class?')">
-            <input type="hidden" name="class_id" value="${escapeAttr(classId)}"/>
-            <button type="submit" class="btn3">${escapeHtml(archiveLabel)}</button>
-          </form>
-        </div>
+        ${tabContent}
       `);
     }
 
@@ -1268,7 +1886,7 @@ export async function handleAdminRequest(ctx) {
           [uuid(), classId, userId, ts]
         );
       }
-      return redirect(`/school-class?class_id=${classId}`);
+      return redirect(`/school-class?class_id=${classId}&tab=students`);
     }
 
     // =============================
@@ -1289,7 +1907,7 @@ export async function handleAdminRequest(ctx) {
       if (!cls) return redirect("/school-classes");
 
       await run(`DELETE FROM class_students WHERE class_id=? AND user_id=?`, [classId, userId]);
-      return redirect(`/school-class?class_id=${classId}`);
+      return redirect(`/school-class?class_id=${classId}&tab=students`);
     }
 
     // =============================
@@ -1329,7 +1947,7 @@ export async function handleAdminRequest(ctx) {
           );
         }
       }
-      return redirect(`/school-class?class_id=${classId}`);
+      return redirect(`/school-class?class_id=${classId}&tab=courses`);
     }
 
     // =============================
@@ -1352,6 +1970,79 @@ export async function handleAdminRequest(ctx) {
       const ts = nowISO();
       await run(`UPDATE classes SET status=?, updated_at=? WHERE id=?`, [newStatus, ts, classId]);
       return redirect("/school-classes");
+    }
+
+    // =============================
+    // Class: update details (POST)
+    // =============================
+    if (path === "/school-update-class" && request.method === "POST") {
+      const r = await requireLogin();
+      if (!r.ok) return r.res;
+      const active = pickActiveMembership(r);
+      if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
+
+      const f = await form();
+      const classId = (f.class_id || "").trim();
+      const name = (f.name || "").trim();
+      if (!classId || !name) return redirect("/school-classes");
+
+      const cls = await first(`SELECT id FROM classes WHERE id=? AND tenant_id=?`, [classId, active.tenant_id]);
+      if (!cls) return redirect("/school-classes");
+
+      const ts = nowISO();
+      await run(
+        `UPDATE classes SET name=?, year_group=?, academic_year=?, description=?, updated_at=? WHERE id=?`,
+        [name, (f.year_group || "").trim() || null, (f.academic_year || "").trim() || null, (f.description || "").trim() || null, ts, classId]
+      );
+      return redirect(`/school-class?class_id=${classId}&tab=details`);
+    }
+
+    // =============================
+    // Class: unenrol from course (POST) — from class page
+    // =============================
+    if (path === "/school-class-unenrol-course" && request.method === "POST") {
+      const r = await requireLogin();
+      if (!r.ok) return r.res;
+      const active = pickActiveMembership(r);
+      if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
+
+      const f = await form();
+      const classId = (f.class_id || "").trim();
+      const courseId = (f.course_id || "").trim();
+      if (!classId || !courseId) return redirect("/school-classes");
+
+      const cls = await first(`SELECT id FROM classes WHERE id=? AND tenant_id=?`, [classId, active.tenant_id]);
+      if (!cls) return redirect("/school-classes");
+
+      const classStudents = await all(`SELECT user_id FROM class_students WHERE class_id=?`, [classId]);
+      for (const s of classStudents) {
+        await run(`DELETE FROM enrollments WHERE course_id=? AND user_id=?`, [courseId, s.user_id]);
+      }
+      return redirect(`/school-class?class_id=${classId}&tab=courses`);
+    }
+
+    // =============================
+    // Course: unenrol class (POST) — from course page
+    // =============================
+    if (path === "/school-course-unenrol-class" && request.method === "POST") {
+      const r = await requireLogin();
+      if (!r.ok) return r.res;
+      const active = pickActiveMembership(r);
+      if (!active || active.role !== "SCHOOL_ADMIN") return redirect("/");
+
+      const f = await form();
+      const courseId = (f.course_id || "").trim();
+      const classId = (f.class_id || "").trim();
+      if (!courseId || !classId) return redirect("/school-courses");
+
+      const cls = await first(`SELECT id FROM classes WHERE id=? AND tenant_id=?`, [classId, active.tenant_id]);
+      if (!cls) return redirect("/school-courses");
+
+      const classStudents = await all(`SELECT user_id FROM class_students WHERE class_id=?`, [classId]);
+      for (const s of classStudents) {
+        await run(`DELETE FROM enrollments WHERE course_id=? AND user_id=?`, [courseId, s.user_id]);
+      }
+      return redirect(`/school-course?course_id=${courseId}&tab=classes`);
     }
 
     return page(`
