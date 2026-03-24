@@ -23,7 +23,7 @@ async function saveSettingsAction(formData: FormData) {
 
   const examId = formData.get("exam_id") as string;
   const { first, run } = getDb();
-  const exam = await first<{ status: string }>("SELECT status FROM exams WHERE id=? AND tenant_id=?", [examId, active.tenant_id]);
+  const exam = await first<{ status: string }>("SELECT status FROM exams WHERE id=? AND tenant_id=?", [examId, active!.tenant_id]);
   if (!exam || exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`/exam-builder?exam_id=${examId}`);
 
   const now = new Date().toISOString();
@@ -45,7 +45,7 @@ async function saveSettingsAction(formData: FormData) {
       (formData.get("exam_password") as string || "").trim() || null,
       (formData.get("starts_at") as string || "").trim() || null,
       (formData.get("ends_at") as string || "").trim() || null,
-      now, examId, active.tenant_id,
+      now, examId, active!.tenant_id,
     ]
   );
   redirect(`/exam-builder?exam_id=${examId}&tab=settings`);
@@ -100,7 +100,7 @@ async function publishAction(formData: FormData) {
   const examId = formData.get("exam_id") as string;
   const { run } = getDb();
   await run("UPDATE exams SET status='PUBLISHED', updated_at=? WHERE id=? AND tenant_id=? AND status='DRAFT'",
-    [new Date().toISOString(), examId, active.tenant_id]);
+    [new Date().toISOString(), examId, active!.tenant_id]);
   redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
 }
 
@@ -113,7 +113,7 @@ async function closeAction(formData: FormData) {
   const examId = formData.get("exam_id") as string;
   const { run } = getDb();
   await run("UPDATE exams SET status='CLOSED', closed_at=?, updated_at=? WHERE id=? AND tenant_id=?",
-    [new Date().toISOString(), new Date().toISOString(), examId, active.tenant_id]);
+    [new Date().toISOString(), new Date().toISOString(), examId, active!.tenant_id]);
   redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
 }
 
@@ -126,7 +126,7 @@ async function releaseResultsAction(formData: FormData) {
   const examId = formData.get("exam_id") as string;
   const { run } = getDb();
   await run("UPDATE exams SET results_published_at=?, updated_at=? WHERE id=? AND tenant_id=?",
-    [new Date().toISOString(), new Date().toISOString(), examId, active.tenant_id]);
+    [new Date().toISOString(), new Date().toISOString(), examId, active!.tenant_id]);
   redirect(`/exam-builder?exam_id=${examId}&tab=results`);
 }
 
@@ -223,14 +223,14 @@ async function gateSubmitAction(formData: FormData) {
   // Get all approvers for this gate.
   const approvers = await all<{ user_id: string }>(
     "SELECT user_id FROM sitting_approval_gates WHERE exam_id=? AND gate_type=? AND tenant_id=?",
-    [examId, gateType, active.tenant_id]
+    [examId, gateType, active!.tenant_id]
   );
 
   // Create PENDING responses for each approver (upsert).
   for (const a of approvers) {
     const existing = await first<{ id: string }>(
       "SELECT id FROM sitting_approval_responses WHERE exam_id=? AND gate_type=? AND approver_id=? AND tenant_id=?",
-      [examId, gateType, a.user_id, active.tenant_id]
+      [examId, gateType, a.user_id, active!.tenant_id]
     );
     if (existing) {
       await run("UPDATE sitting_approval_responses SET status='PENDING', note=NULL, updated_at=? WHERE id=?", [now, existing.id]);
@@ -238,7 +238,7 @@ async function gateSubmitAction(formData: FormData) {
       await run(
         `INSERT INTO sitting_approval_responses (id, exam_id, gate_type, approver_id, status, note, tenant_id, created_at, updated_at)
          VALUES (?,?,?,?,'PENDING',NULL,?,?,?)`,
-        [crypto.randomUUID(), examId, gateType, a.user_id, active.tenant_id, now, now]
+        [crypto.randomUUID(), examId, gateType, a.user_id, active!.tenant_id, now, now]
       );
     }
   }
@@ -271,7 +271,9 @@ export default async function ExamBuilderPage({
 }) {
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
-  if (!active || (active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN")) redirect("/");
+  const isSystemAdmin = auth.user!.is_system_admin === 1;
+  if (!active && !isSystemAdmin) redirect("/");
+  if (active && active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN") redirect("/");
 
   const params = await searchParams;
   const examId = params.exam_id;
@@ -279,6 +281,7 @@ export default async function ExamBuilderPage({
   if (!examId) redirect("/teacher");
 
   const { first, all } = getDb();
+  const tenantId = active?.tenant_id;
   const exam = await first<{
     id: string; title: string; description: string | null; status: string;
     time_limit_minutes: number | null; duration_mins: number | null;
@@ -286,11 +289,19 @@ export default async function ExamBuilderPage({
     allow_review: number; max_attempts: number; exam_password: string | null;
     starts_at: string | null; ends_at: string | null; course_id: string;
     results_published_at: string | null;
-  }>("SELECT * FROM exams WHERE id=? AND tenant_id=?", [examId, active.tenant_id]);
+  }>(
+    tenantId
+      ? "SELECT * FROM exams WHERE id=? AND tenant_id=?"
+      : "SELECT * FROM exams WHERE id=?",
+    tenantId ? [examId, tenantId] : [examId]
+  );
   if (!exam) redirect("/teacher");
 
+  // Use the exam's tenant_id for all queries — works for both school admins and system admins.
+  const tid = tenantId || (exam as Record<string, unknown>).tenant_id as string || "";
+
   // Verify teacher owns the course.
-  if (active.role === "TEACHER") {
+  if (active?.role === "TEACHER") {
     const owns = await first("SELECT 1 FROM course_teachers WHERE course_id=? AND user_id=?", [exam.course_id, auth.user!.id]);
     if (!owns) redirect("/teacher");
   }
@@ -301,7 +312,7 @@ export default async function ExamBuilderPage({
   // Check if this exam has any approval gates configured.
   const gateCount = await first<{ cnt: number }>(
     "SELECT COUNT(*) AS cnt FROM sitting_approval_gates WHERE exam_id=? AND tenant_id=?",
-    [examId, active.tenant_id]
+    [examId, tid]
   );
   const hasGates = Number(gateCount?.cnt ?? 0) > 0;
 
@@ -435,13 +446,13 @@ export default async function ExamBuilderPage({
       )}
 
       {/* Access Tab */}
-      {tab === "access" && <AccessTab examId={exam.id} courseId={exam.course_id} tenantId={active.tenant_id} examStatus={exam.status} />}
+      {tab === "access" && <AccessTab examId={exam.id} courseId={exam.course_id} tenantId={tid} examStatus={exam.status} />}
 
       {/* Results Tab */}
-      {tab === "results" && <ResultsTab examId={exam.id} tenantId={active.tenant_id} resultsPublished={exam.results_published_at} />}
+      {tab === "results" && <ResultsTab examId={exam.id} tenantId={tid} resultsPublished={exam.results_published_at} />}
 
       {/* Approvals Tab */}
-      {tab === "approvals" && hasGates && <ApprovalsTab examId={exam.id} tenantId={active.tenant_id} userRole={active.role} />}
+      {tab === "approvals" && hasGates && <ApprovalsTab examId={exam.id} tenantId={tid} userRole={active?.role || "SCHOOL_ADMIN"} />}
     </main>
   );
 }

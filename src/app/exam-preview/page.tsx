@@ -35,10 +35,12 @@ export default async function ExamPreviewPage({
   // pickActiveMembership() tells us which school the user is currently viewing.
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
-  if (!active) redirect("/");
 
-  // Only teachers and school admins can preview exams.
-  if (active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN") redirect("/");
+  // System admins and users without an active school can still preview
+  // if they have system admin access.
+  const isSystemAdmin = auth.user!.is_system_admin === 1;
+  if (!active && !isSystemAdmin) redirect("/");
+  if (active && active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN") redirect("/");
 
   // ── Params ──────────────────────────────────────────────────────────────────
   const params = await searchParams;
@@ -49,15 +51,18 @@ export default async function ExamPreviewPage({
   // getDb() returns helper functions: first (single row), all (array of rows), run (insert/update).
   const { first, all } = getDb();
 
-  // Load the exam, but only if it belongs to this school (tenant_id check = security).
+  // Load the exam. System admins can view any exam; others must match tenant_id.
+  const tenantId = active?.tenant_id;
   const exam = await first<{
     id: string; title: string; description: string | null;
     duration_mins: number | null; time_limit_minutes: number | null;
     shuffle_questions: number; pass_mark_percent: number | null;
     status: string; course_id: string;
   }>(
-    "SELECT id, title, description, duration_mins, time_limit_minutes, shuffle_questions, pass_mark_percent, status, course_id FROM exams WHERE id=? AND tenant_id=?",
-    [examId, active.tenant_id]
+    tenantId
+      ? "SELECT id, title, description, duration_mins, time_limit_minutes, shuffle_questions, pass_mark_percent, status, course_id FROM exams WHERE id=? AND tenant_id=?"
+      : "SELECT id, title, description, duration_mins, time_limit_minutes, shuffle_questions, pass_mark_percent, status, course_id FROM exams WHERE id=?",
+    tenantId ? [examId, tenantId] : [examId]
   );
   if (!exam) redirect("/teacher");
 
@@ -71,8 +76,8 @@ export default async function ExamPreviewPage({
     marks: number; sort_order: number; model_answer: string | null;
     feedback: string | null;
   }>(
-    "SELECT id, question_text, question_type, marks, sort_order, model_answer, feedback FROM exam_questions WHERE exam_id=? AND tenant_id=? ORDER BY sort_order ASC",
-    [examId, active.tenant_id]
+    "SELECT id, question_text, question_type, marks, sort_order, model_answer, feedback FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC",
+    [examId]
   );
 
   // For each question, load its answer options (MCQ / TRUE_FALSE need these).
