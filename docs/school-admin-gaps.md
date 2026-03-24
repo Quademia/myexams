@@ -25,15 +25,13 @@ See git history for full list. Summary: 9 HIGH (security/validation), 2 MEDIUM (
 
 ### BUGS FOUND (broken right now)
 
-- [ ] **#ST-1 — Creating papers for sittings does not work**
+- [x] **#ST-1 — Creating papers for sittings does not work** — Fixed 2026-03-24
   - File: `src/app/sitting-builder/page.tsx` → `createPaperAction`
-  - Problem: Paper creation fails. Needs investigation — may be query issue, missing validation, or form field mismatch.
-  - Severity: **CRITICAL** — sittings are unusable without papers
+  - Root cause: INSERT used non-existent column `time_limit_minutes` instead of `duration_mins`. Simplified INSERT to match old code pattern.
 
-- [ ] **#ST-2 — Duplicate teacher name in assign-teacher dropdown**
-  - File: `src/app/sitting-builder/page.tsx` → Papers tab teacher dropdown
-  - Problem: Same teacher name appears multiple times in the dropdown. Likely the query returns duplicate rows (e.g., teacher has multiple memberships or the JOIN produces duplicates).
-  - Severity: **HIGH** — confusing UX, may cause wrong assignment
+- [x] **#ST-2 — Duplicate teacher name in assign-teacher dropdown** — Fixed 2026-03-24
+  - File: `src/app/sitting-builder/page.tsx` → Papers tab teacher query
+  - Root cause: Query joined `course_teachers` giving one row per course per teacher. Changed to query unique teachers from `memberships` directly.
 
 ### HIGH PRIORITY — Missing Features / Security
 
@@ -55,11 +53,9 @@ See git history for full list. Summary: 9 HIGH (security/validation), 2 MEDIUM (
   - New code: Can only remove approvers one by one. No bulk disable.
   - Severity: **HIGH** — workflow friction for gate management
 
-- [ ] **#ST-6 — Course_teachers not assigned on paper creation**
+- [x] **#ST-6 — Course_teachers not assigned on paper creation** — Fixed 2026-03-24
   - File: `src/app/sitting-builder/page.tsx` → `createPaperAction`
-  - Old code: When creating a new paper, auto-assigns the teacher to `course_teachers` if not already there.
-  - New code: Creates exam with `created_by` but does NOT insert into `course_teachers`.
-  - Severity: **HIGH** — teacher may not see the exam on their dashboard
+  - Fix: Now auto-assigns teacher to `course_teachers` if not already there, matching old code.
 
 ### MEDIUM PRIORITY — Missing Validation / UX
 
@@ -69,17 +65,13 @@ See git history for full list. Summary: 9 HIGH (security/validation), 2 MEDIUM (
   - New code: No link to view grading. Approver must navigate manually.
   - Severity: **MEDIUM** — UX friction
 
-- [ ] **#ST-8 — Course ACTIVE status not checked on paper creation**
+- [x] **#ST-8 — Course ACTIVE status not checked on paper creation** — Fixed 2026-03-24
   - File: `src/app/sitting-builder/page.tsx` → `createPaperAction`
-  - Old code: Validates course is ACTIVE before allowing paper creation.
-  - New code: Doesn't explicitly check course status.
-  - Severity: **MEDIUM** — could allow papers in archived courses
+  - Fix: Now validates course is ACTIVE and belongs to tenant before creating paper.
 
-- [ ] **#ST-9 — Teacher role not re-validated on paper creation submit**
+- [x] **#ST-9 — Teacher role not re-validated on paper creation submit** — Fixed 2026-03-24
   - File: `src/app/sitting-builder/page.tsx` → `createPaperAction`
-  - Old code: Re-validates teacher has TEACHER role and ACTIVE status on form submission.
-  - New code: Only filters in the dropdown query. No server-side re-check on submit.
-  - Severity: **MEDIUM** — race condition possible if role changes between page load and submit
+  - Fix: Now re-validates teacher has TEACHER role and ACTIVE membership on submit.
 
 ---
 
@@ -88,22 +80,17 @@ See git history for full list. Summary: 9 HIGH (security/validation), 2 MEDIUM (
 | Area | Total | Fixed | Remaining | Deferred |
 |------|-------|-------|-----------|----------|
 | School Admin | 16 | 15 | 0 | 1 (Phase 2) |
-| Sittings & Approvals | 9 | 0 | 9 | 0 |
-| **Total** | **25** | **15** | **9** | **1** |
+| Sittings & Approvals | 9 | 5 | 4 | 0 |
+| **Total** | **25** | **20** | **4** | **1** |
 
-### Priority Order for Sittings Fixes
+### Remaining Sittings Fixes (priority order)
 
-1. **#ST-1** — Fix paper creation (nothing works without this)
-2. **#ST-2** — Fix duplicate teacher dropdown
-3. **#ST-6** — Auto-assign course_teachers on paper creation
-4. **#ST-8** — Course ACTIVE check on paper creation
-5. **#ST-9** — Teacher validation on submit
-6. **#ST-5** — Gate disable feature
-7. **#ST-7** — Exam grade link in approvals
-8. **#ST-3** — Per-question approval comments
-9. **#ST-4** — Question preview in approvals
+1. **#ST-5** — Gate disable feature
+2. **#ST-7** — Exam grade link in approvals
+3. **#ST-3** — Per-question approval comments
+4. **#ST-4** — Question preview in approvals
 
-*Items 1-5 are quick targeted fixes. Items 6-9 are larger feature builds.*
+*These are larger feature builds, not quick fixes.*
 
 ---
 
