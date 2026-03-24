@@ -233,7 +233,7 @@ async function revokeCodeAction(formData: FormData) {
 export default async function SchoolCoursePage({
   searchParams,
 }: {
-  searchParams: Promise<{ course_id?: string; tab?: string; new_code?: string }>;
+  searchParams: Promise<{ course_id?: string; tab?: string; new_code?: string; dup_who?: string; dup_auto?: string; dup_max?: string }>;
 }) {
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
@@ -315,7 +315,7 @@ export default async function SchoolCoursePage({
       {tab === "classes" && <ClassesTab courseId={course.id} tenantId={tid} />}
 
       {/* ---------- Join Codes Tab ---------- */}
-      {tab === "join-codes" && <JoinCodesTab courseId={course.id} tenantId={tid} newCode={newCode} />}
+      {tab === "join-codes" && <JoinCodesTab courseId={course.id} tenantId={tid} newCode={newCode} dupWho={params.dup_who} dupAuto={params.dup_auto} dupMax={params.dup_max} />}
     </SchoolLayout>
   );
 }
@@ -534,7 +534,7 @@ async function ClassesTab({ courseId, tenantId }: { courseId: string; tenantId: 
   );
 }
 
-async function JoinCodesTab({ courseId, tenantId, newCode }: { courseId: string; tenantId: string; newCode?: string }) {
+async function JoinCodesTab({ courseId, tenantId, newCode, dupWho, dupAuto, dupMax }: { courseId: string; tenantId: string; newCode?: string; dupWho?: string; dupAuto?: string; dupMax?: string }) {
   const { all } = getDb();
 
   // Fetch active (non-revoked) codes for this course.
@@ -601,13 +601,21 @@ async function JoinCodesTab({ courseId, tenantId, newCode }: { courseId: string;
                       </span>
                     </td>
                     <td className="py-3 px-2">
-                      <form action={revokeCodeAction}>
-                        <input type="hidden" name="code_id" value={c.id} />
-                        <input type="hidden" name="course_id" value={courseId} />
-                        <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                          Revoke
-                        </button>
-                      </form>
+                      <div className="flex gap-1">
+                        <a
+                          href={`/school-course?course_id=${courseId}&tab=join-codes&dup_who=${c.role === "STUDENT" ? "student" : "teacher"}&dup_auto=${c.auto_approve}&dup_max=${c.max_uses}#create`}
+                          className="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-semibold rounded-lg hover:bg-teal-100 no-underline"
+                        >
+                          Duplicate
+                        </a>
+                        <form action={revokeCodeAction}>
+                          <input type="hidden" name="code_id" value={c.id} />
+                          <input type="hidden" name="course_id" value={courseId} />
+                          <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
+                            Revoke
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -617,12 +625,16 @@ async function JoinCodesTab({ courseId, tenantId, newCode }: { courseId: string;
         )}
       </Card>
 
-      <Card title="Create Code for this Course">
+      <div id="create">
+      <Card title={dupWho ? "Duplicate Code" : "Create Code for this Course"}>
+        {dupWho && (
+          <p className="text-xs text-teal-700 mb-3">Pre-filled from an existing code. Adjust if needed, then click Create.</p>
+        )}
         <form action={createCodeAction}>
           <input type="hidden" name="course_id" value={courseId} />
 
           <label className="block text-sm mb-1">Who is this code for?</label>
-          <select name="who" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
+          <select name="who" required defaultValue={dupWho || "student"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
             <option value="student">Student</option>
             <option value="teacher">Teacher</option>
           </select>
@@ -630,7 +642,7 @@ async function JoinCodesTab({ courseId, tenantId, newCode }: { courseId: string;
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="block text-sm mb-1">Auto-approve</label>
-              <select name="auto_approve" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <select name="auto_approve" defaultValue={dupAuto || "0"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                 <option value="0">No (admin approval required)</option>
                 <option value="1">Yes (instant)</option>
               </select>
@@ -642,13 +654,14 @@ async function JoinCodesTab({ courseId, tenantId, newCode }: { courseId: string;
           </div>
 
           <label className="block text-sm mb-1">Max uses</label>
-          <input name="max_uses" type="number" min="1" defaultValue="300" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
+          <input name="max_uses" type="number" min="1" defaultValue={dupMax || "300"} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
 
           <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
             Create code
           </button>
         </form>
       </Card>
+      </div>
     </>
   );
 }
