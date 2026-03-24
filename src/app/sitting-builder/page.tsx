@@ -87,13 +87,35 @@ async function createPaperAction(formData: FormData) {
   const now = new Date().toISOString();
   const examId = crypto.randomUUID();
 
-  // Create the exam.
+  // #ST-8 — Validate course is ACTIVE and belongs to tenant.
+  const course = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [courseId, active.tenant_id]);
+  if (!course) redirect(`/sitting-builder?sitting_id=${sittingId}&tab=papers`);
+
+  // #ST-9 — Re-validate teacher has TEACHER role and ACTIVE membership.
+  const teacher = await first(
+    "SELECT id FROM memberships WHERE user_id=? AND tenant_id=? AND role='TEACHER' AND status='ACTIVE'",
+    [teacherId, active.tenant_id]
+  );
+  if (!teacher) redirect(`/sitting-builder?sitting_id=${sittingId}&tab=papers`);
+
+  // #ST-1 — Create the exam (fixed: use correct column name duration_mins, not time_limit_minutes).
   await run(
-    `INSERT INTO exams (id, tenant_id, course_id, title, description, status, time_limit_minutes, shuffle_questions,
-       score_display, pass_mark_percent, allow_review, max_attempts, created_by, created_at, updated_at)
-     VALUES (?,?,?,?,NULL,'DRAFT',NULL,0,'BOTH',NULL,1,1,?,?,?)`,
+    `INSERT INTO exams (id, tenant_id, course_id, title, status, created_by, created_at, updated_at)
+     VALUES (?,?,?,?,'DRAFT',?,?,?)`,
     [examId, active.tenant_id, courseId, title, teacherId, now, now]
   );
+
+  // #ST-6 — Auto-assign teacher to course_teachers if not already there.
+  const alreadyTeaching = await first(
+    "SELECT course_id FROM course_teachers WHERE course_id=? AND user_id=?",
+    [courseId, teacherId]
+  );
+  if (!alreadyTeaching) {
+    await run(
+      "INSERT INTO course_teachers (course_id, user_id, created_at) VALUES (?,?,?)",
+      [courseId, teacherId, now]
+    );
+  }
 
   // Add to sitting.
   const maxRow = await first<{ mx: number | null }>("SELECT MAX(sort_order) AS mx FROM exam_sitting_papers WHERE sitting_id=?", [sittingId]);
@@ -286,11 +308,12 @@ async function PapersTab({ sittingId, tenantId }: { sittingId: string; tenantId:
   const courses = await all<{ id: string; title: string }>(
     "SELECT id, title FROM courses WHERE tenant_id=? AND status='ACTIVE' ORDER BY title ASC", [tenantId]
   );
-  const teachers = await all<{ id: string; name: string; course_id: string }>(
-    `SELECT DISTINCT u.id, u.name, ct.course_id
-     FROM course_teachers ct
-     JOIN users u ON u.id = ct.user_id
-     JOIN memberships m ON m.user_id = u.id AND m.tenant_id=? AND m.role='TEACHER' AND m.status='ACTIVE'
+  // #ST-2 — Fixed: query unique teachers (not per-course duplicates).
+  const teachers = await all<{ id: string; name: string }>(
+    `SELECT DISTINCT u.id, u.name
+     FROM memberships m
+     JOIN users u ON u.id = m.user_id
+     WHERE m.tenant_id=? AND m.role='TEACHER' AND m.status='ACTIVE'
      ORDER BY u.name ASC`,
     [tenantId]
   );
@@ -407,7 +430,7 @@ async function PapersTab({ sittingId, tenantId }: { sittingId: string; tenantId:
               <select name="teacher_id" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
                 <option value="">— select teacher —</option>
                 {teachers.map((t) => (
-                  <option key={`${t.id}-${t.course_id}`} value={t.id}>{t.name}</option>
+                  <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
               <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
