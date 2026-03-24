@@ -53,6 +53,36 @@ async function addApproverAction(formData: FormData) {
   redirect(`/sitting-gate-settings?sitting_id=${sittingId}&exam_id=${examId}`);
 }
 
+async function disableGateAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
+
+  const sittingId = formData.get("sitting_id") as string;
+  const examId = formData.get("exam_id") as string;
+  const gateType = formData.get("gate_type") as string;
+
+  if (!sittingId || !examId || !["QUESTIONS", "GRADING", "RESULTS"].includes(gateType)) {
+    redirect("/sittings");
+  }
+
+  const { run } = getDb();
+
+  // Delete all approvers for this gate.
+  await run(
+    "DELETE FROM sitting_approval_gates WHERE exam_id=? AND gate_type=? AND tenant_id=?",
+    [examId, gateType, active.tenant_id]
+  );
+  // Delete all pending responses for this gate.
+  await run(
+    "DELETE FROM sitting_approval_responses WHERE exam_id=? AND gate_type=? AND status='PENDING' AND tenant_id=?",
+    [examId, gateType, active.tenant_id]
+  );
+
+  redirect(`/sitting-gate-settings?sitting_id=${sittingId}&exam_id=${examId}`);
+}
+
 async function removeApproverAction(formData: FormData) {
   "use server";
   const auth = await requireAuth();
@@ -170,11 +200,23 @@ export default async function SittingGateSettingsPage({
           <Card key={def.type}>
             <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
               <span className="font-bold text-base">{def.label}</span>
-              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
-                isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-400"
-              }`}>
-                {isActive ? "Active" : "Inactive"}
-              </span>
+              <div className="flex gap-2 items-center">
+                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-400"
+                }`}>
+                  {isActive ? "Active" : "Inactive"}
+                </span>
+                {isActive && (
+                  <form action={disableGateAction}>
+                    <input type="hidden" name="sitting_id" value={sittingId} />
+                    <input type="hidden" name="exam_id" value={examId} />
+                    <input type="hidden" name="gate_type" value={def.type} />
+                    <button type="submit" className="px-2 py-0.5 bg-red-50 text-red-700 text-[11px] font-semibold rounded-lg hover:bg-red-100">
+                      Disable Gate
+                    </button>
+                  </form>
+                )}
+              </div>
             </div>
             <p className="text-xs text-gray-500 mb-3">{def.desc}</p>
 

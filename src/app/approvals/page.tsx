@@ -71,9 +71,13 @@ export default async function ApprovalsPage() {
     all<{
       exam_id: string; gate_type: string; sitting_id: string | null;
       exam_title: string; sitting_title: string | null; submitter_name: string | null;
+      first_submitted_attempt: string | null;
     }>(
       `SELECT sag.exam_id, sag.gate_type, sag.sitting_id,
-         e.title AS exam_title, es.title AS sitting_title, u.name AS submitter_name
+         e.title AS exam_title, es.title AS sitting_title, u.name AS submitter_name,
+         (SELECT ea.id FROM exam_attempts ea
+          WHERE ea.exam_id=sag.exam_id AND ea.tenant_id=sag.tenant_id AND ea.status='SUBMITTED'
+          ORDER BY ea.submitted_at ASC LIMIT 1) AS first_submitted_attempt
        FROM sitting_approval_gates sag
        JOIN sitting_approval_responses sar
          ON sar.exam_id=sag.exam_id AND sar.gate_type=sag.gate_type
@@ -148,6 +152,14 @@ export default async function ApprovalsPage() {
                         <span className="text-xs text-gray-400">by {item.submitter_name}</span>
                       )}
                     </div>
+                    <a
+                      href={item.gate_type === "GRADING" && item.first_submitted_attempt
+                        ? `/exam-grade?attempt_id=${item.first_submitted_attempt}&view=1`
+                        : `/exam-preview?exam_id=${item.exam_id}`}
+                      className="text-teal-700 hover:underline text-sm"
+                    >
+                      View exam →
+                    </a>
                   </div>
                   <div className="min-w-[240px] flex-shrink-0">
                     <form action={respondAction}>
