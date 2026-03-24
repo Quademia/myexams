@@ -207,6 +207,45 @@ async function removeAccessAction(formData: FormData) {
   redirect(`/exam-builder?exam_id=${examId}&tab=access`);
 }
 
+async function gateSubmitAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active) redirect("/");
+
+  const examId = formData.get("exam_id") as string;
+  const gateType = formData.get("gate_type") as string;
+  if (!examId || !["QUESTIONS", "GRADING", "RESULTS"].includes(gateType)) redirect("/teacher");
+
+  const { all, first, run } = getDb();
+  const now = new Date().toISOString();
+
+  // Get all approvers for this gate.
+  const approvers = await all<{ user_id: string }>(
+    "SELECT user_id FROM sitting_approval_gates WHERE exam_id=? AND gate_type=? AND tenant_id=?",
+    [examId, gateType, active.tenant_id]
+  );
+
+  // Create PENDING responses for each approver (upsert).
+  for (const a of approvers) {
+    const existing = await first<{ id: string }>(
+      "SELECT id FROM sitting_approval_responses WHERE exam_id=? AND gate_type=? AND approver_id=? AND tenant_id=?",
+      [examId, gateType, a.user_id, active.tenant_id]
+    );
+    if (existing) {
+      await run("UPDATE sitting_approval_responses SET status='PENDING', note=NULL, updated_at=? WHERE id=?", [now, existing.id]);
+    } else {
+      await run(
+        `INSERT INTO sitting_approval_responses (id, exam_id, gate_type, approver_id, status, note, tenant_id, created_at, updated_at)
+         VALUES (?,?,?,?,'PENDING',NULL,?,?,?)`,
+        [crypto.randomUUID(), examId, gateType, a.user_id, active.tenant_id, now, now]
+      );
+    }
+  }
+
+  redirect(`/exam-builder?exam_id=${examId}&tab=approvals`);
+}
+
 // ============================================================
 // Page Component
 // ============================================================
@@ -258,12 +297,22 @@ export default async function ExamBuilderPage({
 
   const locked = exam.status === "PUBLISHED" || exam.status === "CLOSED";
   const base = `/exam-builder?exam_id=${examId}`;
+
+  // Check if this exam has any approval gates configured.
+  const gateCount = await first<{ cnt: number }>(
+    "SELECT COUNT(*) AS cnt FROM sitting_approval_gates WHERE exam_id=? AND tenant_id=?",
+    [examId, active.tenant_id]
+  );
+  const hasGates = Number(gateCount?.cnt ?? 0) > 0;
+
   const tabs = [
     { label: "Settings", value: "settings", href: `${base}&tab=settings` },
     { label: "Questions", value: "questions", href: `${base}&tab=questions` },
+    { label: "Preview", value: "preview", href: `/exam-preview?exam_id=${examId}` },
     { label: "Publish", value: "publish", href: `${base}&tab=publish` },
     { label: "Access", value: "access", href: `${base}&tab=access` },
     { label: "Results", value: "results", href: `${base}&tab=results` },
+    ...(hasGates ? [{ label: "Approvals", value: "approvals", href: `${base}&tab=approvals` }] : []),
   ];
 
   return (
@@ -390,6 +439,9 @@ export default async function ExamBuilderPage({
 
       {/* Results Tab */}
       {tab === "results" && <ResultsTab examId={exam.id} tenantId={active.tenant_id} resultsPublished={exam.results_published_at} />}
+
+      {/* Approvals Tab */}
+      {tab === "approvals" && hasGates && <ApprovalsTab examId={exam.id} tenantId={active.tenant_id} userRole={active.role} />}
     </main>
   );
 }
@@ -705,6 +757,136 @@ async function ResultsTab({ examId, tenantId, resultsPublished }: { examId: stri
           </div>
         )}
       </Card>
+    </>
+  );
+}
+
+// ============================================================
+// Approvals Tab — shows gate statuses and submit buttons
+// ============================================================
+
+const GATE_TYPES = ["QUESTIONS", "GRADING", "RESULTS"] as const;
+const GATE_LABELS: Record<string, string> = {
+  QUESTIONS: "Questions Gate",
+  GRADING: "Grading Gate",
+  RESULTS: "Results Gate",
+};
+const GATE_DESCS: Record<string, string> = {
+  QUESTIONS: "Must be approved before the exam can be published",
+  GRADING: "Must be approved before results can be released",
+  RESULTS: "Final sign-off before results go live to students",
+};
+
+async function ApprovalsTab({ examId, tenantId, userRole }: { examId: string; tenantId: string; userRole: string }) {
+  const { all } = getDb();
+
+  // Load all gates and responses for this exam.
+  const allGates = await all<{ gate_type: string; user_id: string; approver_name: string }>(
+    `SELECT sag.gate_type, sag.user_id, u.name AS approver_name
+     FROM sitting_approval_gates sag JOIN users u ON u.id = sag.user_id
+     WHERE sag.exam_id=? AND sag.tenant_id=?
+     ORDER BY sag.gate_type, u.name ASC`,
+    [examId, tenantId]
+  );
+
+  const allResponses = await all<{ gate_type: string; approver_id: string; status: string; note: string | null }>(
+    "SELECT gate_type, approver_id, status, note FROM sitting_approval_responses WHERE exam_id=? AND tenant_id=?",
+    [examId, tenantId]
+  );
+
+  const responseMap: Record<string, Record<string, { status: string; note: string | null }>> = {};
+  for (const r of allResponses) {
+    if (!responseMap[r.gate_type]) responseMap[r.gate_type] = {};
+    responseMap[r.gate_type][r.approver_id] = { status: r.status, note: r.note };
+  }
+
+  const configuredTypes = [...new Set(allGates.map((g) => g.gate_type))];
+
+  return (
+    <>
+      {configuredTypes.map((gateType) => {
+        const assignees = allGates.filter((g) => g.gate_type === gateType);
+        const respForGate = responseMap[gateType] || {};
+        const hasAnyResponse = Object.keys(respForGate).length > 0;
+
+        // Calculate overall gate status.
+        const allApproved = assignees.length > 0 && assignees.every((a) => respForGate[a.user_id]?.status === "APPROVED");
+        const anyRejected = assignees.some((a) => respForGate[a.user_id]?.status === "REJECTED");
+
+        let overallStatus: string;
+        let statusStyle: string;
+        if (allApproved) { overallStatus = "Approved"; statusStyle = "bg-green-50 text-green-700"; }
+        else if (anyRejected) { overallStatus = "Rejected"; statusStyle = "bg-red-50 text-red-700"; }
+        else if (hasAnyResponse) { overallStatus = "Awaiting Response"; statusStyle = "bg-gray-100 text-gray-500"; }
+        else { overallStatus = "Not Submitted"; statusStyle = "bg-amber-50 text-amber-700"; }
+
+        // Rejection notes.
+        const rejections = assignees.filter((a) => respForGate[a.user_id]?.status === "REJECTED" && respForGate[a.user_id]?.note);
+
+        return (
+          <Card key={gateType}>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <span className="font-bold text-base">{GATE_LABELS[gateType] || gateType}</span>
+              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${statusStyle}`}>
+                {overallStatus}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">{GATE_DESCS[gateType]}</p>
+
+            {/* Per-approver status */}
+            <div className="mb-3">
+              {assignees.map((a) => {
+                const resp = respForGate[a.user_id];
+                const st = resp?.status;
+                let badge: { label: string; style: string };
+                if (st === "APPROVED") badge = { label: "Approved", style: "text-green-700" };
+                else if (st === "REJECTED") badge = { label: "Rejected", style: "text-red-600" };
+                else if (hasAnyResponse) badge = { label: "Pending", style: "text-gray-400" };
+                else badge = { label: "Not sent", style: "text-gray-300" };
+
+                return (
+                  <div key={a.user_id} className="flex items-center justify-between py-1.5 border-b border-gray-100">
+                    <span className="text-sm">{a.approver_name}</span>
+                    <span className={`text-xs font-semibold ${badge.style}`}>{badge.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Rejection notes */}
+            {rejections.map((a) => (
+              <div key={a.user_id} className="bg-red-50 border border-red-200 rounded-lg p-3 mb-2 text-sm">
+                <strong>{a.approver_name}:</strong> {respForGate[a.user_id]?.note}
+              </div>
+            ))}
+
+            {/* Submit / resubmit button — teacher only */}
+            {userRole === "TEACHER" && (
+              <>
+                {allApproved ? (
+                  <div className="text-sm text-green-700 mt-2">This gate is fully approved. No further action needed.</div>
+                ) : hasAnyResponse && !anyRejected ? (
+                  <div className="text-sm text-gray-500 mt-2">Submitted — waiting for all approvers to respond.</div>
+                ) : (
+                  <form action={gateSubmitAction} className="mt-2">
+                    <input type="hidden" name="exam_id" value={examId} />
+                    <input type="hidden" name="gate_type" value={gateType} />
+                    <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+                      {anyRejected ? "Resubmit for Approval" : "Submit for Approval"}
+                    </button>
+                  </form>
+                )}
+              </>
+            )}
+          </Card>
+        );
+      })}
+
+      {configuredTypes.length === 0 && (
+        <Card>
+          <p className="text-sm text-gray-400 text-center py-4">No approval gates configured for this exam.</p>
+        </Card>
+      )}
     </>
   );
 }
