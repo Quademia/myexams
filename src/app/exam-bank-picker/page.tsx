@@ -63,7 +63,7 @@ async function addBankQuestionToExamAction(formData: FormData) {
   const bankOptions = await all<{
     option_text: string; is_correct: number; sort_order: number;
   }>(
-    "SELECT option_text, is_correct, sort_order FROM question_bank_options WHERE question_id=? ORDER BY sort_order ASC",
+    "SELECT option_text, is_correct, sort_order FROM question_bank_options WHERE bank_question_id=? ORDER BY sort_order ASC",
     [bankQuestionId]
   );
 
