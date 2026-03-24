@@ -4,7 +4,7 @@
 // Handles dynamic MCQ option adding/removing which requires client-side state.
 // Includes per-option feedback fields matching the old build.
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 type QuestionData = {
   id?: string;
@@ -23,12 +23,14 @@ export function QuestionForm({
   editAction,
   initial,
   onCancel,
+  children,
 }: {
   examId: string;
   addAction: (formData: FormData) => void;
   editAction: (formData: FormData) => void;
   initial?: QuestionData;
   onCancel?: string;
+  children?: ReactNode;
 }) {
   const isEditing = !!initial?.id;
   const [qType, setQType] = useState(initial?.question_type || "MCQ");
@@ -216,6 +218,9 @@ export function QuestionForm({
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
         />
       </div>
+
+      {/* Extra fields injected by parent */}
+      {children}
 
       {/* Submit */}
       <div className="flex gap-2">

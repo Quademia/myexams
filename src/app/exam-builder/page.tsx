@@ -26,11 +26,12 @@ async function saveToBankHelper(
   userId: string,
   qType: string, qText: string, marks: number, partialMarking: number,
   modelAnswer: string | null, feedback: string | null,
-  formData: FormData, now: string
+  formData: FormData, now: string,
+  examQuestionId?: string, examId?: string
 ) {
   if (bankId) {
-    // Update existing bank question.
-    const existing = await first("SELECT id FROM question_bank WHERE id=? AND tenant_id=?", [bankId, tenantId]);
+    // Update existing bank question — only if teacher owns it.
+    const existing = await first("SELECT id FROM question_bank WHERE id=? AND tenant_id=? AND created_by=?", [bankId, tenantId, userId]);
     if (existing) {
       await run(
         "UPDATE question_bank SET question_type=?, question_text=?, marks=?, partial_marking=?, model_answer=?, feedback=?, updated_at=? WHERE id=?",
@@ -41,6 +42,8 @@ async function saveToBankHelper(
       await saveBankOptions(run, bankId, qType, formData, now);
       return;
     }
+    // Bank entry exists but teacher doesn't own it — create a new personal copy
+    // and repoint the exam question to the new entry.
   }
   // Create new bank question.
   const newBankId = crypto.randomUUID();
@@ -50,6 +53,10 @@ async function saveToBankHelper(
     [newBankId, tenantId, userId, qType, qText, marks, partialMarking, modelAnswer, feedback, now, now]
   );
   await saveBankOptions(run, newBankId, qType, formData, now);
+  // Repoint the exam question to the new bank entry.
+  if (examQuestionId && examId) {
+    await run("UPDATE exam_questions SET bank_question_id=? WHERE id=? AND exam_id=?", [newBankId, examQuestionId, examId]);
+  }
 }
 
 async function saveBankOptions(
@@ -271,16 +278,8 @@ async function addQuestionAction(formData: FormData) {
     }
   }
 
-  // Auto-save to question bank (PERSONAL).
-  await saveToBankHelper(run, first, null, active.tenant_id, auth.user!.id, qType, qText, marks, partialMarking, modelAnswer, feedback, formData, now);
-  // Link exam question to bank entry.
-  const bankEntry = await first<{ id: string }>(
-    "SELECT id FROM question_bank WHERE tenant_id=? AND created_by=? AND question_text=? ORDER BY created_at DESC LIMIT 1",
-    [active.tenant_id, auth.user!.id, qText]
-  );
-  if (bankEntry) {
-    await run("UPDATE exam_questions SET bank_question_id=? WHERE id=?", [bankEntry.id, qId]);
-  }
+  // Auto-save to question bank (PERSONAL) and link the exam question.
+  await saveToBankHelper(run, first, null, active.tenant_id, auth.user!.id, qType, qText, marks, partialMarking, modelAnswer, feedback, formData, now, qId, examId);
 
   redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
 }
@@ -339,16 +338,7 @@ async function updateQuestionAction(formData: FormData) {
   // Auto-sync to question bank if exam is DRAFT.
   const existingQ = await first<{ bank_question_id: string | null }>("SELECT bank_question_id FROM exam_questions WHERE id=? AND exam_id=?", [qId, examId]);
   if (exam.status === "DRAFT") {
-    await saveToBankHelper(run, first, existingQ?.bank_question_id || null, active.tenant_id, auth.user!.id, qType, qText, marks, partialMarking, modelAnswer, feedback, formData, now);
-    if (!existingQ?.bank_question_id) {
-      const bankEntry = await first<{ id: string }>(
-        "SELECT id FROM question_bank WHERE tenant_id=? AND created_by=? AND question_text=? ORDER BY created_at DESC LIMIT 1",
-        [active.tenant_id, auth.user!.id, qText]
-      );
-      if (bankEntry) {
-        await run("UPDATE exam_questions SET bank_question_id=? WHERE id=?", [bankEntry.id, qId]);
-      }
-    }
+    await saveToBankHelper(run, first, existingQ?.bank_question_id || null, active.tenant_id, auth.user!.id, qType, qText, marks, partialMarking, modelAnswer, feedback, formData, now, qId, examId);
   }
 
   redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
@@ -1124,9 +1114,29 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
 
   return (
     <>
-      <Card title={`Questions (${questions.length}) — ${totalMarks} marks`}>
+      <Card>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-base font-bold m-0">Questions ({questions.length})</h2>
+            <p className="text-sm text-gray-400 mt-0.5">{totalMarks} mark{totalMarks !== 1 ? "s" : ""} total</p>
+          </div>
+          {!locked && (
+            <div className="flex gap-2">
+              <a href={`/exam-bank-picker?exam_id=${examId}`}
+                className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 no-underline">
+                📚 Add from bank
+              </a>
+              <a href={`/exam-builder?exam_id=${examId}&tab=questions`}
+                className="px-3 py-1.5 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800 no-underline">
+                + New question
+              </a>
+            </div>
+          )}
+        </div>
+      </Card>
+      <Card>
         {questions.length === 0 ? (
-          <p className="text-sm text-gray-400 py-4 text-center">No questions yet. Add questions below or from the question bank.</p>
+          <p className="text-sm text-gray-400 py-4 text-center">No questions yet. Use the buttons above to add questions.</p>
         ) : (
           <div className="space-y-2">
             {questions.map((q, i) => {
@@ -1151,17 +1161,17 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
                         )}
                       </div>
                       <div className="text-sm mb-1">{q.question_text}</div>
-                      {opts.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {opts.map((o, j) => (
-                            <span key={j} className={`inline-block px-2 py-0.5 rounded-md text-[11px] ${
-                              o.is_correct ? "bg-teal-50 text-teal-700" : "bg-gray-100 text-gray-500"
-                            }`}>
-                              {o.option_text}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {(() => {
+                        let preview = "";
+                        if (q.question_type === "MCQ" || q.question_type === "MULTIPLE_SELECT" || q.question_type === "TRUE_FALSE") {
+                          preview = opts.slice(0, 3).map((o, i) => `${String.fromCharCode(65 + i)}) ${o.option_text}`).join(" · ");
+                        } else if (q.question_type === "SHORT_ANSWER") {
+                          preview = "Written answer";
+                        } else if (q.question_type === "ESSAY") {
+                          preview = "Essay response";
+                        }
+                        return preview ? <p className="text-xs text-gray-400 mt-1 truncate">{preview}</p> : null;
+                      })()}
                     </div>
                     {!locked && (
                       <div className="flex flex-col gap-1 items-end flex-shrink-0">
@@ -1190,7 +1200,9 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
                         <form action={deleteQuestionAction}>
                           <input type="hidden" name="exam_id" value={examId} />
                           <input type="hidden" name="question_id" value={q.id} />
-                          <button type="submit" className="px-2 py-1 bg-gray-100 text-red-600 text-xs rounded-lg hover:bg-red-50">
+                          <button type="submit"
+                            onClick={(e) => { if (!confirm("Delete this question?")) e.preventDefault(); }}
+                            className="px-2 py-1 bg-gray-100 text-red-600 text-xs rounded-lg hover:bg-red-50">
                             Delete
                           </button>
                         </form>
@@ -1210,7 +1222,14 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
         if (!editQ) return null;
         const editOpts = optsByQ[editQ.id] || [];
         return (
-          <Card title={`Edit Question ${questions.indexOf(editQ) + 1}`}>
+          <Card>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold">Edit Question {questions.indexOf(editQ) + 1}</h3>
+              <a href={`/exam-builder?exam_id=${examId}&tab=questions`}
+                className="px-3 py-1.5 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800 no-underline">
+                + New question
+              </a>
+            </div>
             <QuestionForm
               examId={examId}
               addAction={addQuestionAction}
@@ -1242,15 +1261,6 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
         </Card>
       )}
 
-      {/* Bank picker link */}
-      {!locked && (
-        <Card>
-          <p className="text-sm text-gray-500">
-            Or add from the{" "}
-            <a href={`/exam-bank-picker?exam_id=${examId}`} className="text-teal-700 hover:underline">Question Bank →</a>
-          </p>
-        </Card>
-      )}
     </>
   );
 }
