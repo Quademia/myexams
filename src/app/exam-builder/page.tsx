@@ -91,6 +91,17 @@ async function saveSettingsAction(formData: FormData) {
   const exam = await first<{ status: string }>("SELECT status FROM exams WHERE id=? AND tenant_id=?", [examId, active!.tenant_id]);
   if (!exam || exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`/exam-builder?exam_id=${examId}`);
 
+  // Block teachers from saving settings if exam belongs to a sitting.
+  const sitting = await first(
+    `SELECT 1 FROM exam_sitting_papers esp
+     JOIN exam_sittings es ON es.id = esp.sitting_id
+     WHERE esp.exam_id=? AND es.tenant_id=?`,
+    [examId, active!.tenant_id]
+  );
+  if (sitting && active!.role === "TEACHER") {
+    redirect(`/exam-builder?exam_id=${examId}&tab=settings`);
+  }
+
   const now = new Date().toISOString();
   const endsAt = (formData.get("ends_at") as string || "").trim() || null;
   await run(
@@ -318,6 +329,12 @@ async function publishAction(formData: FormData) {
   );
   if (!exam || exam.status !== "DRAFT") redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
 
+  // Block teacher if exam belongs to a sitting.
+  const sitting = await first(
+    `SELECT 1 FROM exam_sitting_papers WHERE exam_id=? LIMIT 1`, [examId]
+  );
+  if (sitting && active!.role === "TEACHER") redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
+
   // Must have at least one question to publish.
   const qCount = await first<{ c: number }>("SELECT COUNT(*) AS c FROM exam_questions WHERE exam_id=?", [examId]);
   if (!qCount || Number(qCount.c) === 0) redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
@@ -341,6 +358,12 @@ async function closeAction(formData: FormData) {
   const { first, run } = getDb();
   const now = new Date().toISOString();
 
+  // Block teacher if exam belongs to a sitting.
+  const sitting = await first(
+    `SELECT 1 FROM exam_sitting_papers WHERE exam_id=? LIMIT 1`, [examId]
+  );
+  if (sitting && active!.role === "TEACHER") redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
+
   // Check results_release_policy — auto-release results if AFTER_CLOSE.
   const exam = await first<{ results_release_policy: string | null }>(
     "SELECT results_release_policy FROM exams WHERE id=? AND tenant_id=?", [examId, active!.tenant_id]
@@ -360,10 +383,17 @@ async function releaseResultsAction(formData: FormData) {
   if (!active) redirect("/");
 
   const examId = formData.get("exam_id") as string;
-  const { run } = getDb();
+  const { first, run } = getDb();
+
+  // Block teacher if exam belongs to a sitting.
+  const sitting = await first(
+    `SELECT 1 FROM exam_sitting_papers WHERE exam_id=? LIMIT 1`, [examId]
+  );
+  if (sitting && active!.role === "TEACHER") redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
+
   await run("UPDATE exams SET results_published_at=?, updated_at=? WHERE id=? AND tenant_id=?",
     [new Date().toISOString(), new Date().toISOString(), examId, active!.tenant_id]);
-  redirect(`/exam-builder?exam_id=${examId}&tab=results`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
 }
 
 async function addAccessClassAction(formData: FormData) {
@@ -544,7 +574,9 @@ export default async function ExamBuilderPage({
     shuffle_questions: number; score_display: string; pass_mark_percent: number | null;
     allow_review: number; max_attempts: number; exam_password: string | null;
     starts_at: string | null; ends_at: string | null; course_id: string;
-    results_published_at: string | null;
+    results_published_at: string | null; results_release_policy: string | null;
+    late_submission_policy: string | null; closed_at: string | null;
+    published_at: string | null;
   }>(
     tenantId
       ? "SELECT * FROM exams WHERE id=? AND tenant_id=?"
@@ -562,8 +594,45 @@ export default async function ExamBuilderPage({
     if (!owns) redirect("/teacher");
   }
 
+  // Sitting lock — teachers can't edit settings/publish if exam belongs to a sitting.
+  const sittingForExam = await first<{ sitting_title: string }>(
+    `SELECT es.title AS sitting_title
+     FROM exam_sitting_papers esp
+     JOIN exam_sittings es ON es.id = esp.sitting_id
+     WHERE esp.exam_id=? AND es.tenant_id=?
+     LIMIT 1`,
+    [examId, tid]
+  );
+  const sittingLocked = !!sittingForExam && active?.role === "TEACHER";
+
   const locked = exam.status === "PUBLISHED" || exam.status === "CLOSED";
   const base = `/exam-builder?exam_id=${examId}`;
+
+  // Question count + total marks for publish tab summary.
+  const qStats = await first<{ c: number; total_marks: number }>(
+    "SELECT COUNT(*) AS c, COALESCE(SUM(marks),0) AS total_marks FROM exam_questions WHERE exam_id=? AND tenant_id=?",
+    [examId, tid]
+  );
+  const questionCount = Number(qStats?.c ?? 0);
+  const totalMarks = Number(qStats?.total_marks ?? 0);
+
+  // Gate statuses for publish tab gate checks.
+  const gateStatuses = Object.fromEntries(
+    (await all<{ gate_type: string; status: string }>(
+      `SELECT gate_type,
+         CASE
+           WHEN COUNT(*) = 0 THEN 'NOT_CONFIGURED'
+           WHEN SUM(CASE WHEN status='APPROVED' THEN 1 ELSE 0 END) = COUNT(*) THEN 'APPROVED'
+           WHEN SUM(CASE WHEN status='REJECTED' THEN 1 ELSE 0 END) > 0 THEN 'REJECTED'
+           ELSE 'PENDING'
+         END AS status
+       FROM sitting_approval_responses
+       WHERE exam_id=? AND tenant_id=?
+       GROUP BY gate_type`,
+      [examId, tid]
+    )).map(r => [r.gate_type, r.status])
+  );
+  const getGateStatus = (g: string) => gateStatuses[g] ?? "NOT_CONFIGURED";
 
   // Check if this exam has any approval gates configured.
   const gateCount = await first<{ cnt: number }>(
@@ -600,9 +669,14 @@ export default async function ExamBuilderPage({
               This exam is {exam.status.toLowerCase()} — settings are locked.
             </div>
           )}
+          {sittingLocked && (
+            <div className="bg-gray-50 border border-gray-200 text-gray-500 text-sm rounded-lg p-3 mb-3">
+              🔒 This exam belongs to <strong>{sittingForExam!.sitting_title}</strong>. Settings are managed by the sitting admin.
+            </div>
+          )}
           <form action={saveSettingsAction}>
             <input type="hidden" name="exam_id" value={exam.id} />
-            <fieldset disabled={locked} className="border-none p-0 m-0">
+            <fieldset disabled={locked || sittingLocked} className="border-none p-0 m-0">
               <label className="block text-sm mb-1">Title</label>
               <input name="title" defaultValue={exam.title} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
               <label className="block text-sm mb-1">Description</label>
@@ -704,7 +778,7 @@ export default async function ExamBuilderPage({
                   <input name="exam_password" defaultValue={exam.exam_password || ""} placeholder="Leave blank for no password" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                 </div>
               </div>
-              {!locked && (
+              {!locked && !sittingLocked && (
                 <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
                   Save Settings
                 </button>
@@ -717,32 +791,193 @@ export default async function ExamBuilderPage({
       {/* Questions Tab */}
       {tab === "questions" && <QuestionsTab examId={exam.id} locked={locked} editQuestionId={params.edit_q} />}
 
-      {/* Publish Tab */}
+      {/* Publish Tab — 3 always-visible sections */}
       {tab === "publish" && (
-        <Card title="Publish & Status">
-          <p className="text-sm text-gray-600 mb-3">Current status: <StatusBadge status={exam.status} /></p>
-          {exam.status === "DRAFT" && (
-            <form action={publishAction}>
-              <input type="hidden" name="exam_id" value={exam.id} />
-              <p className="text-sm text-gray-500 mb-3">Publishing makes this exam available to students. Settings and questions will be locked.</p>
-              <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                Publish Exam
-              </button>
-            </form>
-          )}
-          {exam.status === "PUBLISHED" && (
-            <form action={closeAction}>
-              <input type="hidden" name="exam_id" value={exam.id} />
-              <p className="text-sm text-gray-500 mb-3">Closing the exam prevents new attempts. Existing in-progress attempts can still be submitted.</p>
-              <button type="submit" className="px-4 py-2 bg-red-50 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-100">
-                Close Exam
-              </button>
-            </form>
-          )}
-          {exam.status === "CLOSED" && (
-            <p className="text-sm text-gray-500">This exam is closed. No further changes can be made.</p>
-          )}
-        </Card>
+        <>
+          {/* Section 1 — Publish Exam */}
+          <Card title="Publish Exam">
+            <div className="overflow-x-auto mb-4">
+              <table className="w-full text-sm">
+                <tbody>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500 w-44">Questions</td><td className="py-1.5">{questionCount} questions — {totalMarks} marks</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Duration</td><td className="py-1.5">{exam.duration_mins ?? 60} mins</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Max attempts</td><td className="py-1.5">{exam.max_attempts}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Opens at</td><td className="py-1.5">{exam.starts_at ? fmtISO(exam.starts_at) : "—"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Closes at</td><td className="py-1.5">{exam.ends_at ? fmtISO(exam.ends_at) : "—"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Late submission</td><td className="py-1.5">{(exam as any).late_submission_policy || "—"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Exam password</td><td className="py-1.5">{exam.exam_password || "None"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Score display</td><td className="py-1.5">{exam.score_display}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Pass mark %</td><td className="py-1.5">{exam.pass_mark_percent != null ? `${exam.pass_mark_percent}%` : "—"}</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            {sittingLocked ? (
+              <>
+                <div className="bg-gray-50 border border-gray-200 text-gray-500 text-sm rounded-lg p-3 mb-3">
+                  🔒 This exam belongs to <strong>{sittingForExam!.sitting_title}</strong>. Publishing is managed by the sitting admin.
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Publish Exam</button>
+              </>
+            ) : exam.status !== "DRAFT" ? (
+              <>
+                <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg p-3 mb-3">
+                  ✅ {(exam as any).published_at ? `Published on ${fmtISO((exam as any).published_at)}` : "This exam has been published."}
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Publish Exam</button>
+              </>
+            ) : questionCount === 0 ? (
+              <>
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-3">
+                  ⚠️ Add at least one question before publishing.
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Publish Exam</button>
+              </>
+            ) : active?.role === "SCHOOL_ADMIN" && getGateStatus("QUESTIONS") !== "APPROVED" && getGateStatus("QUESTIONS") !== "NOT_CONFIGURED" ? (
+              <>
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-3">
+                  ⚠️ Questions approval required before publishing.
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Publish Exam</button>
+              </>
+            ) : (
+              <form action={publishAction}>
+                <input type="hidden" name="exam_id" value={exam.id} />
+                <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+                  Publish Exam
+                </button>
+              </form>
+            )}
+          </Card>
+
+          {/* Section 2 — Close Exam */}
+          <Card title="Close Exam">
+            <div className="text-sm text-gray-500 mb-3">
+              {exam.status === "CLOSED" && (exam as any).closed_at ? (
+                <span>📅 Closed on: {fmtISO((exam as any).closed_at)}</span>
+              ) : exam.status === "PUBLISHED" && exam.ends_at && new Date(exam.ends_at) > new Date() ? (
+                <span>📅 Scheduled to close: {fmtISO(exam.ends_at)}</span>
+              ) : exam.status === "PUBLISHED" && exam.ends_at && new Date(exam.ends_at) <= new Date() ? (
+                <span>📅 Scheduled close date passed: {fmtISO(exam.ends_at)}</span>
+              ) : exam.status === "PUBLISHED" ? (
+                <span>📅 No automatic close date set</span>
+              ) : null}
+            </div>
+
+            {sittingLocked ? (
+              <>
+                <div className="bg-gray-50 border border-gray-200 text-gray-500 text-sm rounded-lg p-3 mb-3">
+                  🔒 This exam belongs to <strong>{sittingForExam!.sitting_title}</strong>. Closing is managed by the sitting admin.
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Close Exam</button>
+              </>
+            ) : exam.status === "DRAFT" ? (
+              <>
+                <p className="text-sm text-gray-500 mb-3">Publish the exam first.</p>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Close Exam</button>
+              </>
+            ) : exam.status === "CLOSED" ? (
+              <>
+                <p className="text-sm text-gray-500 mb-3">This exam is already closed.</p>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Close Exam</button>
+              </>
+            ) : exam.status === "PUBLISHED" && exam.ends_at && new Date(exam.ends_at) > new Date() ? (
+              <>
+                <p className="text-sm text-gray-500 mb-3">Exam is scheduled to close automatically on {fmtISO(exam.ends_at)}.</p>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Close Exam</button>
+              </>
+            ) : exam.status === "PUBLISHED" && exam.ends_at && new Date(exam.ends_at) <= new Date() ? (
+              <>
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-3">
+                  ⚠️ Your scheduled close date has passed.
+                </div>
+                <form action={closeAction}>
+                  <input type="hidden" name="exam_id" value={exam.id} />
+                  <button type="submit" className="px-4 py-2 bg-red-50 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-100">
+                    Close Exam Now
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500 mb-3">No automatic close date is set.</p>
+                <form action={closeAction}>
+                  <input type="hidden" name="exam_id" value={exam.id} />
+                  <button type="submit" className="px-4 py-2 bg-red-50 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-100">
+                    Close Exam Now
+                  </button>
+                </form>
+              </>
+            )}
+          </Card>
+
+          {/* Section 3 — Release Results */}
+          <Card title="Release Results">
+            <div className="text-sm text-gray-500 mb-3">
+              {(exam as any).results_release_policy === "IMMEDIATE" ? (
+                <span>📅 Auto-releases on publish</span>
+              ) : (exam as any).results_release_policy === "AFTER_CLOSE" ? (
+                <span>📅 Auto-releases when exam closes</span>
+              ) : exam.results_published_at ? (
+                <span>📅 Released on: {fmtISO(exam.results_published_at)}</span>
+              ) : (
+                <span>📅 Not yet released</span>
+              )}
+            </div>
+
+            {sittingLocked ? (
+              <>
+                <div className="bg-gray-50 border border-gray-200 text-gray-500 text-sm rounded-lg p-3 mb-3">
+                  🔒 This exam belongs to <strong>{sittingForExam!.sitting_title}</strong>. Results release is managed by the sitting admin.
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Release Results</button>
+              </>
+            ) : exam.status !== "CLOSED" ? (
+              <>
+                <p className="text-sm text-gray-500 mb-3">Close the exam first before releasing results.</p>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Release Results</button>
+              </>
+            ) : (exam as any).results_release_policy === "IMMEDIATE" ? (
+              <>
+                <p className="text-sm text-gray-500 mb-3">Results release automatically on publish (IMMEDIATE policy).</p>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Release Results</button>
+              </>
+            ) : (exam as any).results_release_policy === "AFTER_CLOSE" ? (
+              <>
+                <p className="text-sm text-gray-500 mb-3">Results release automatically when exam closes (AFTER_CLOSE policy).</p>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Release Results</button>
+              </>
+            ) : exam.results_published_at ? (
+              <>
+                <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg p-3 mb-3">
+                  ✅ Results already released on {fmtISO(exam.results_published_at)}.
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Release Results</button>
+              </>
+            ) : active?.role === "SCHOOL_ADMIN" && getGateStatus("GRADING") !== "APPROVED" && getGateStatus("GRADING") !== "NOT_CONFIGURED" ? (
+              <>
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-3">
+                  ⚠️ Grading approval required before releasing results.
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Release Results</button>
+              </>
+            ) : active?.role === "SCHOOL_ADMIN" && getGateStatus("RESULTS") !== "APPROVED" && getGateStatus("RESULTS") !== "NOT_CONFIGURED" ? (
+              <>
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-3">
+                  ⚠️ Results approval required before releasing results.
+                </div>
+                <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Release Results</button>
+              </>
+            ) : (
+              <form action={releaseResultsAction}>
+                <input type="hidden" name="exam_id" value={exam.id} />
+                <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+                  Release Results Now
+                </button>
+              </form>
+            )}
+          </Card>
+        </>
       )}
 
       {/* Access Tab */}
