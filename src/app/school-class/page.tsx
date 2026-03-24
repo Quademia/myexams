@@ -48,7 +48,8 @@ async function archiveClassAction(formData: FormData) {
   const newStatus = cls.status === "ACTIVE" ? "ARCHIVED" : "ACTIVE";
   await run("UPDATE classes SET status=?, updated_at=? WHERE id=? AND tenant_id=?",
     [newStatus, new Date().toISOString(), classId, active.tenant_id]);
-  redirect(`/school-class?class_id=${classId}&tab=details`);
+  // #15 — Redirect to class list after archive/unarchive (matches old code).
+  redirect("/school-classes");
 }
 
 async function addStudentAction(formData: FormData) {
@@ -62,6 +63,14 @@ async function addStudentAction(formData: FormData) {
   if (!classId || !userId) redirect("/school-classes");
 
   const { first, run } = getDb();
+
+  // #6 — Verify user has a STUDENT membership in this school (matches old code).
+  const validMember = await first(
+    "SELECT id FROM memberships WHERE user_id=? AND tenant_id=? AND role='STUDENT' AND status='ACTIVE'",
+    [userId, active.tenant_id]
+  );
+  if (!validMember) redirect(`/school-class?class_id=${classId}&tab=students`);
+
   const exists = await first("SELECT 1 FROM class_students WHERE class_id=? AND user_id=?", [classId, userId]);
   if (!exists) {
     await run("INSERT INTO class_students (id, class_id, user_id, created_at) VALUES (?,?,?,?)",
@@ -96,6 +105,11 @@ async function enrolCourseAction(formData: FormData) {
   const { all, first, run } = getDb();
   const now = new Date().toISOString();
 
+  // #7 — Validate both class and course belong to this tenant and course is ACTIVE (matches old code).
+  const classCheck = await first("SELECT id FROM classes WHERE id=? AND tenant_id=?", [classId, active.tenant_id]);
+  const courseCheck = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [courseId, active.tenant_id]);
+  if (!classCheck || !courseCheck) redirect(`/school-class?class_id=${classId}&tab=courses`);
+
   const classStudents = await all<{ user_id: string }>(
     "SELECT user_id FROM class_students WHERE class_id=?", [classId]
   );
@@ -120,7 +134,11 @@ async function unenrolCourseAction(formData: FormData) {
 
   const classId = formData.get("class_id") as string;
   const courseId = formData.get("course_id") as string;
-  const { all, run } = getDb();
+  const { all, first, run } = getDb();
+
+  // #7 — Validate class belongs to this tenant (matches old code).
+  const classCheck = await first("SELECT id FROM classes WHERE id=? AND tenant_id=?", [classId, active.tenant_id]);
+  if (!classCheck) redirect(`/school-class?class_id=${classId}&tab=courses`);
 
   const classStudents = await all<{ user_id: string }>(
     "SELECT user_id FROM class_students WHERE class_id=?", [classId]
@@ -141,6 +159,7 @@ export default async function SchoolClassPage({
   searchParams: Promise<{ class_id?: string; tab?: string }>;
 }) {
   const auth = await requireAuth();
+  if (auth.user!.is_system_admin === 1) redirect("/sys");
   const active = pickActiveMembership(auth);
   if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
 

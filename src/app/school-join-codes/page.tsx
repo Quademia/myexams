@@ -40,6 +40,12 @@ async function createCodeAction(formData: FormData) {
   }
 
   const { first, run } = getDb();
+
+  // #8 — Validate course exists, belongs to tenant, and is ACTIVE (matches old code).
+  if ((scope! === "COURSE_ENROLL" || scope! === "COURSE_TEACHER") && course_id) {
+    const c = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [course_id, active.tenant_id]);
+    if (!c) redirect("/school-join-codes?error=course_invalid");
+  }
   const { APP_SECRET } = getEnv();
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + expDays * 24 * 60 * 60 * 1000).toISOString();
@@ -84,7 +90,7 @@ async function approveRequestAction(formData: FormData) {
   const reqId = formData.get("request_id") as string;
   if (!reqId) redirect("/school-join-codes");
 
-  const { first, all, run } = getDb();
+  const { first, all, run, db } = getDb();
   const now = new Date().toISOString();
 
   const jr = await first<{
@@ -110,53 +116,116 @@ async function approveRequestAction(formData: FormData) {
     redirect("/school-join-codes?error=code_invalid");
   }
 
-  // Reserve a use.
-  const res = await run(
-    `UPDATE join_codes SET uses_approved = uses_approved + 1, updated_at=?
-     WHERE id=? AND revoked=0 AND uses_approved < max_uses AND expires_at > ?`,
-    [now, jc.id, now]
-  );
+  // #3 — Reserve a use and CHECK that the UPDATE actually changed a row.
+  // This prevents race conditions where two admins approve at the same time
+  // and the code has hit its max uses.
+  const reserveResult = await db
+    .prepare(`UPDATE join_codes SET uses_approved = uses_approved + 1, updated_at=? WHERE id=? AND revoked=0 AND uses_approved < max_uses AND expires_at > ?`)
+    .bind(now, jc.id, now)
+    .run();
+
+  if (Number(reserveResult?.meta?.changes || 0) === 0) {
+    redirect("/school-join-codes?error=code_invalid");
+  }
+
+  // Helper: unreserve the use if the apply logic fails (#2).
+  async function unreserve() {
+    await run(
+      `UPDATE join_codes SET uses_approved = CASE WHEN uses_approved>0 THEN uses_approved-1 ELSE 0 END, updated_at=? WHERE id=?`,
+      [new Date().toISOString(), jc.id]
+    );
+  }
+
+  // Helper: ensure membership exists with the right role.
+  // Matches the old ensureMembership() function.
+  async function ensureMembership(tenantId: string, userId: string, roleWanted: string) {
+    const m = await first<{ id: string; role: string; status: string }>(
+      "SELECT id, role, status FROM memberships WHERE tenant_id=? AND user_id=? ORDER BY created_at ASC LIMIT 1",
+      [tenantId, userId]
+    );
+    if (!m) {
+      await run("INSERT INTO memberships (id, user_id, tenant_id, role, status, created_at, updated_at) VALUES (?,?,?,?,'ACTIVE',?,?)",
+        [crypto.randomUUID(), userId, tenantId, roleWanted, now, now]);
+    } else if (m.status !== "ACTIVE" || m.role !== roleWanted) {
+      await run("UPDATE memberships SET role=?, status='ACTIVE', updated_at=? WHERE id=?", [roleWanted, now, m.id]);
+    }
+  }
 
   // Apply the join action: ensure membership + course enrolment/assignment.
+  // This ports the full applyJoinActionForUser() logic from the old code,
+  // including teacher demotion protection (#1) and role hierarchy (#16).
   const userId = jr.user_id;
 
-  // Ensure membership exists.
-  const m = await first<{ id: string; role: string; status: string }>(
-    "SELECT id, role, status FROM memberships WHERE tenant_id=? AND user_id=? ORDER BY created_at ASC LIMIT 1",
-    [jc.tenant_id, userId]
-  );
+  try {
+    // Load current membership to check existing role.
+    const m = await first<{ id: string; role: string; status: string }>(
+      "SELECT id, role, status FROM memberships WHERE tenant_id=? AND user_id=? ORDER BY created_at ASC LIMIT 1",
+      [jc.tenant_id, userId]
+    );
+    const curRole = (m && m.status === "ACTIVE") ? m.role : null;
 
-  if (jc.scope === "TENANT_ROLE") {
-    const roleToSet = (m?.role === "SCHOOL_ADMIN" && m?.status === "ACTIVE") ? "SCHOOL_ADMIN" : jc.role;
-    if (!m) {
-      await run("INSERT INTO memberships (id, user_id, tenant_id, role, status, created_at, updated_at) VALUES (?,?,?,?,'ACTIVE',?,?)",
-        [crypto.randomUUID(), userId, jc.tenant_id, roleToSet, now, now]);
-    } else {
-      await run("UPDATE memberships SET role=?, status='ACTIVE', updated_at=? WHERE id=?", [roleToSet, now, m.id]);
+    // #1 — Teacher demotion protection.
+    // If user is already a TEACHER and this is a student-scope code, don't downgrade them.
+    if (
+      curRole === "TEACHER" &&
+      jc.role === "STUDENT" &&
+      (jc.scope === "TENANT_ROLE" || jc.scope === "COURSE_ENROLL")
+    ) {
+      await unreserve();
+      redirect("/school-join-codes?error=teacher_demotion");
     }
-  }
 
-  if (jc.scope === "COURSE_ENROLL" && jc.course_id) {
-    if (!m) {
-      await run("INSERT INTO memberships (id, user_id, tenant_id, role, status, created_at, updated_at) VALUES (?,?,?,?,'ACTIVE',?,?)",
-        [crypto.randomUUID(), userId, jc.tenant_id, "STUDENT", now, now]);
+    // #16 — Full role hierarchy logic, matching old applyJoinActionForUser().
+    if (jc.scope === "TENANT_ROLE") {
+      // Never downgrade SCHOOL_ADMIN.
+      const roleToSet = curRole === "SCHOOL_ADMIN" ? "SCHOOL_ADMIN" : jc.role;
+      await ensureMembership(jc.tenant_id, userId, roleToSet);
     }
-    const ex = await first("SELECT 1 FROM enrollments WHERE course_id=? AND user_id=?", [jc.course_id, userId]);
-    if (!ex) {
-      await run("INSERT INTO enrollments (id, course_id, user_id, tenant_id, status, created_at, updated_at) VALUES (?,?,?,?,'ACTIVE',?,?)",
-        [crypto.randomUUID(), jc.course_id, userId, jc.tenant_id, now, now]);
-    }
-  }
 
-  if (jc.scope === "COURSE_TEACHER" && jc.course_id) {
-    if (!m) {
-      await run("INSERT INTO memberships (id, user_id, tenant_id, role, status, created_at, updated_at) VALUES (?,?,?,?,'ACTIVE',?,?)",
-        [crypto.randomUUID(), userId, jc.tenant_id, "TEACHER", now, now]);
+    if (jc.scope === "COURSE_ENROLL" && jc.course_id) {
+      // Validate course is still active.
+      const courseCheck = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [jc.course_id, jc.tenant_id]);
+      if (!courseCheck) {
+        await unreserve();
+        redirect("/school-join-codes?error=code_invalid");
+      }
+      // Preserve SCHOOL_ADMIN; otherwise set STUDENT.
+      const roleToSet = curRole === "SCHOOL_ADMIN" ? "SCHOOL_ADMIN" : "STUDENT";
+      if (!curRole) {
+        await ensureMembership(jc.tenant_id, userId, roleToSet);
+      }
+      // Don't downgrade existing role — only create membership if none exists.
+      const ex = await first("SELECT 1 FROM enrollments WHERE course_id=? AND user_id=?", [jc.course_id, userId]);
+      if (!ex) {
+        await run("INSERT INTO enrollments (id, course_id, user_id, tenant_id, status, created_at, updated_at) VALUES (?,?,?,?,'ACTIVE',?,?)",
+          [crypto.randomUUID(), jc.course_id, userId, jc.tenant_id, now, now]);
+      }
     }
-    const ex = await first("SELECT 1 FROM course_teachers WHERE course_id=? AND user_id=?", [jc.course_id, userId]);
-    if (!ex) {
-      await run("INSERT INTO course_teachers (course_id, user_id) VALUES (?,?)", [jc.course_id, userId]);
+
+    if (jc.scope === "COURSE_TEACHER" && jc.course_id) {
+      // Validate course is still active.
+      const courseCheck = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [jc.course_id, jc.tenant_id]);
+      if (!courseCheck) {
+        await unreserve();
+        redirect("/school-join-codes?error=code_invalid");
+      }
+      // Preserve SCHOOL_ADMIN; otherwise set TEACHER.
+      const roleToSet = curRole === "SCHOOL_ADMIN" ? "SCHOOL_ADMIN" : "TEACHER";
+      if (!curRole) {
+        await ensureMembership(jc.tenant_id, userId, roleToSet);
+      } else if (curRole !== "SCHOOL_ADMIN" && curRole !== "TEACHER") {
+        // Upgrade STUDENT to TEACHER.
+        await ensureMembership(jc.tenant_id, userId, "TEACHER");
+      }
+      const ex = await first("SELECT 1 FROM course_teachers WHERE course_id=? AND user_id=?", [jc.course_id, userId]);
+      if (!ex) {
+        await run("INSERT INTO course_teachers (course_id, user_id, created_at) VALUES (?,?,?)", [jc.course_id, userId, now]);
+      }
     }
+  } catch {
+    // #2 — If anything fails, unreserve the join code use so it's not wasted.
+    await unreserve();
+    redirect("/school-join-codes?error=approve_failed");
   }
 
   await run("UPDATE join_requests SET status='APPROVED', reviewed_by_user_id=?, reviewed_at=? WHERE id=?",
@@ -193,6 +262,7 @@ export default async function SchoolJoinCodesPage({
   }>;
 }) {
   const auth = await requireAuth();
+  if (auth.user!.is_system_admin === 1) redirect("/sys");
   const active = pickActiveMembership(auth);
   if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
 
@@ -269,6 +339,21 @@ export default async function SchoolJoinCodesPage({
       {error === "code_invalid" && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
           Cannot approve: the join code is no longer valid (expired, revoked, or maxed out).
+        </div>
+      )}
+      {error === "course_invalid" && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
+          Course not found or inactive. Cannot create a code for it.
+        </div>
+      )}
+      {error === "teacher_demotion" && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
+          Cannot approve: this user is already a Teacher and cannot be downgraded to Student via this code.
+        </div>
+      )}
+      {error === "approve_failed" && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
+          Something went wrong while approving. The join code use was not consumed. Please try again.
         </div>
       )}
 

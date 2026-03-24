@@ -170,6 +170,7 @@ export default async function SchoolPeoplePage({
   }>;
 }) {
   const auth = await requireAuth();
+  if (auth.user!.is_system_admin === 1) redirect("/sys");
   const active = pickActiveMembership(auth);
   if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
 

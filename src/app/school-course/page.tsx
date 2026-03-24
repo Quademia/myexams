@@ -30,6 +30,9 @@ async function updateCourseAction(formData: FormData) {
   const status = formData.get("status") as string;
   if (!courseId || !title) redirect("/school-courses");
 
+  // #9 — Validate status is one of the allowed values (matches old code).
+  if (!["ACTIVE", "ARCHIVED"].includes(status)) redirect(`/school-course?course_id=${courseId}&tab=details`);
+
   const { run } = getDb();
   await run(
     "UPDATE courses SET title=?, status=?, updated_at=? WHERE id=? AND tenant_id=?",
@@ -49,12 +52,21 @@ async function assignTeacherAction(formData: FormData) {
   if (!courseId || !userId) redirect("/school-courses");
 
   const { first, run } = getDb();
+
+  // #4 — Verify user has a TEACHER or SCHOOL_ADMIN membership in this school (matches old code).
+  const validMember = await first(
+    "SELECT id FROM memberships WHERE user_id=? AND tenant_id=? AND role IN ('TEACHER','SCHOOL_ADMIN') AND status='ACTIVE'",
+    [userId, active.tenant_id]
+  );
+  if (!validMember) redirect(`/school-course?course_id=${courseId}&tab=teachers`);
+
   const exists = await first(
     "SELECT 1 FROM course_teachers WHERE course_id=? AND user_id=?",
     [courseId, userId]
   );
   if (!exists) {
-    await run("INSERT INTO course_teachers (course_id, user_id) VALUES (?,?)", [courseId, userId]);
+    // #13 — Include created_at (matches old code).
+    await run("INSERT INTO course_teachers (course_id, user_id, created_at) VALUES (?,?,?)", [courseId, userId, new Date().toISOString()]);
   }
   redirect(`/school-course?course_id=${courseId}&tab=teachers`);
 }
@@ -83,6 +95,14 @@ async function enrolStudentAction(formData: FormData) {
   if (!courseId || !userId) redirect("/school-courses");
 
   const { first, run } = getDb();
+
+  // #5 — Verify user has a STUDENT or SCHOOL_ADMIN membership in this school (matches old code).
+  const validMember = await first(
+    "SELECT id FROM memberships WHERE user_id=? AND tenant_id=? AND role IN ('STUDENT','SCHOOL_ADMIN') AND status='ACTIVE'",
+    [userId, active.tenant_id]
+  );
+  if (!validMember) redirect(`/school-course?course_id=${courseId}&tab=students`);
+
   const now = new Date().toISOString();
   const exists = await first(
     "SELECT 1 FROM enrollments WHERE course_id=? AND user_id=?",
@@ -122,6 +142,11 @@ async function enrolClassAction(formData: FormData) {
 
   const { all, first, run } = getDb();
   const now = new Date().toISOString();
+
+  // #7 — Validate both class and course belong to this tenant and course is ACTIVE (matches old code).
+  const classCheck = await first("SELECT id FROM classes WHERE id=? AND tenant_id=?", [classId, active.tenant_id]);
+  const courseCheck = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [courseId, active.tenant_id]);
+  if (!classCheck || !courseCheck) redirect(`/school-course?course_id=${courseId}&tab=classes`);
 
   // Get all students in the class.
   const classStudents = await all<{ user_id: string }>(
@@ -236,6 +261,7 @@ export default async function SchoolCoursePage({
   searchParams: Promise<{ course_id?: string; tab?: string; new_code?: string; dup_who?: string; dup_auto?: string; dup_max?: string }>;
 }) {
   const auth = await requireAuth();
+  if (auth.user!.is_system_admin === 1) redirect("/sys");
   const active = pickActiveMembership(auth);
   if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
 
@@ -456,8 +482,9 @@ async function ClassesTab({ courseId, tenantId }: { courseId: string; tenantId: 
   const { all } = getDb();
 
   // Find classes that have at least one student enrolled in this course.
-  const classes = await all<{ id: string; name: string; student_count: number }>(
-    `SELECT cl.id, cl.name,
+  // #14 — Also fetch year_group to display next to class name (matches old code).
+  const classes = await all<{ id: string; name: string; year_group: string | null; student_count: number }>(
+    `SELECT cl.id, cl.name, cl.year_group,
        (SELECT COUNT(*) FROM class_students cs WHERE cs.class_id = cl.id) AS student_count
      FROM classes cl
      WHERE cl.tenant_id=? AND cl.status='ACTIVE'
@@ -495,8 +522,9 @@ async function ClassesTab({ courseId, tenantId }: { courseId: string; tenantId: 
               <li key={cl.id} className="flex items-center justify-between text-sm">
                 <span>
                   {cl.name}
+                  {cl.year_group && <span className="text-gray-400 ml-1">({cl.year_group})</span>}
                   <span className="text-gray-400 ml-2">
-                    ({cl.enrolled_count} of {cl.student_count} students enrolled)
+                    — {cl.enrolled_count} of {cl.student_count} students enrolled
                   </span>
                 </span>
                 <form action={unenrolClassAction}>
