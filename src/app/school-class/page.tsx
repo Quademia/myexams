@@ -366,11 +366,11 @@ async function CoursesTab({ classId, tenantId }: { classId: string; tenantId: st
         )}
       </Card>
 
-      <Card title="Enrol Class in Course">
+      <Card title="Enrol This Class's Students in a Course">
         {allCourses.length > 0 ? (
           <>
             <p className="text-xs text-gray-500 mb-2">
-              This will enrol all students currently in the class into the course. Students already enrolled will be skipped.
+              This will enrol all students currently in this class into the selected course. Students already enrolled will be skipped.
             </p>
             <form action={enrolCourseAction} className="flex gap-2 items-end">
               <input type="hidden" name="class_id" value={classId} />
@@ -380,7 +380,7 @@ async function CoursesTab({ classId, tenantId }: { classId: string; tenantId: st
                 ))}
               </select>
               <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                Enrol all students
+                Enrol Class Students
               </button>
             </form>
           </>

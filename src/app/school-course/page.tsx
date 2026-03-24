@@ -182,7 +182,11 @@ async function unenrolClassAction(formData: FormData) {
 
   const courseId = formData.get("course_id") as string;
   const classId = formData.get("class_id") as string;
-  const { all, run } = getDb();
+  const { all, run, first } = getDb();
+
+  // Validate class exists and belongs to this tenant.
+  const cls = await first("SELECT id FROM classes WHERE id=? AND tenant_id=?", [classId, active.tenant_id]);
+  if (!cls) redirect(`/school-course?course_id=${courseId}&tab=classes`);
 
   // Get all students in the class and remove their enrollments.
   const classStudents = await all<{ user_id: string }>(
@@ -522,7 +526,7 @@ async function ClassesTab({ courseId, tenantId }: { courseId: string; tenantId: 
   }
 
   const linkedClasses = classesWithEnrollment.filter((c) => c.enrolled_count > 0);
-  const availableClasses = classesWithEnrollment.filter((c) => c.student_count > 0);
+  const availableClasses = classesWithEnrollment; // Show all active classes, even empty ones
 
   return (
     <>
@@ -553,10 +557,10 @@ async function ClassesTab({ courseId, tenantId }: { courseId: string; tenantId: 
         )}
       </Card>
 
-      {availableClasses.length > 0 && (
-        <Card title="Enrol Class">
+      {availableClasses.length > 0 ? (
+        <Card title="Enrol Class Students in This Course">
           <p className="text-xs text-gray-500 mb-2">
-            Bulk enrols all students in the selected class into this course. Students already enrolled are skipped.
+            This will enrol all students in the selected class into this course. Students already enrolled are skipped.
           </p>
           <form action={enrolClassAction} className="flex gap-2 items-end">
             <input type="hidden" name="course_id" value={courseId} />
@@ -566,9 +570,13 @@ async function ClassesTab({ courseId, tenantId }: { courseId: string; tenantId: 
               ))}
             </select>
             <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-              Enrol Class
+              Enrol Class Students
             </button>
           </form>
+        </Card>
+      ) : (
+        <Card title="Enrol Class Students in This Course">
+          <p className="text-sm text-gray-400">No active classes found.</p>
         </Card>
       )}
     </>
