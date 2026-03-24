@@ -11,6 +11,8 @@ import { getDb } from "@/lib/db";
 import { Card } from "@/components/Card";
 import { TabNav } from "@/components/TabNav";
 import { QuestionForm } from "@/components/QuestionForm";
+import { GradeBandsEditor } from "@/components/GradeBandsEditor";
+import { CustomFieldsEditor } from "@/components/CustomFieldsEditor";
 
 // ============================================================
 // Helper: save/sync question to personal question bank
@@ -133,6 +135,45 @@ async function saveSettingsAction(formData: FormData) {
       now, examId, active!.tenant_id,
     ]
   );
+
+  // Grade bands — delete and reinsert
+  await run("DELETE FROM exam_grade_bands WHERE exam_id=?", [examId]);
+  const bandLabels = formData.getAll("band_label[]") as string[];
+  const bandMins = formData.getAll("band_min[]") as string[];
+  for (let i = 0; i < bandLabels.length; i++) {
+    const label = (bandLabels[i] || "").trim();
+    const minPct = parseFloat(bandMins[i]);
+    if (label && !Number.isNaN(minPct)) {
+      await run(
+        "INSERT INTO exam_grade_bands (id, exam_id, label, min_percent, created_at) VALUES (?,?,?,?,?)",
+        [crypto.randomUUID(), examId, label, minPct, now]
+      );
+    }
+  }
+
+  // Custom fields — delete and reinsert
+  await run("DELETE FROM exam_custom_fields WHERE exam_id=?", [examId]);
+  const cfLabels = formData.getAll("cf_label[]") as string[];
+  const cfTypes = formData.getAll("cf_type[]") as string[];
+  const cfOptions = formData.getAll("cf_options[]") as string[];
+  const cfRequired = formData.getAll("cf_required[]") as string[];
+  for (let i = 0; i < cfLabels.length; i++) {
+    const label = (cfLabels[i] || "").trim();
+    const type = cfTypes[i] || "TEXT";
+    if (label) {
+      await run(
+        "INSERT INTO exam_custom_fields (id, exam_id, field_label, field_type, field_options, is_required, sort_order, created_at) VALUES (?,?,?,?,?,?,?,?)",
+        [
+          crypto.randomUUID(), examId, label, type,
+          type === "DROPDOWN" ? (cfOptions[i] || "").trim() || null : null,
+          cfRequired[i] === "1" ? 1 : 0,
+          i + 1,
+          now
+        ]
+      );
+    }
+  }
+
   redirect(`/exam-builder?exam_id=${examId}&tab=settings`);
 }
 
@@ -634,6 +675,16 @@ export default async function ExamBuilderPage({
   );
   const getGateStatus = (g: string) => gateStatuses[g] ?? "NOT_CONFIGURED";
 
+  // Grade bands and custom fields for settings + publish summary.
+  const bands = await all<{ id: string; label: string; min_percent: number }>(
+    "SELECT id, label, min_percent FROM exam_grade_bands WHERE exam_id=? ORDER BY min_percent DESC",
+    [examId]
+  );
+  const customFields = await all<{ id: string; field_label: string; field_type: string; field_options: string | null; is_required: number }>(
+    "SELECT id, field_label, field_type, field_options, is_required FROM exam_custom_fields WHERE exam_id=? ORDER BY sort_order ASC",
+    [examId]
+  );
+
   // Check if this exam has any approval gates configured.
   const gateCount = await first<{ cnt: number }>(
     "SELECT COUNT(*) AS cnt FROM sitting_approval_gates WHERE exam_id=? AND tenant_id=?",
@@ -663,7 +714,7 @@ export default async function ExamBuilderPage({
 
       {/* Settings Tab */}
       {tab === "settings" && (
-        <Card title="Settings">
+        <>
           {locked && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-3">
               This exam is {exam.status.toLowerCase()} — settings are locked.
@@ -677,115 +728,158 @@ export default async function ExamBuilderPage({
           <form action={saveSettingsAction}>
             <input type="hidden" name="exam_id" value={exam.id} />
             <fieldset disabled={locked || sittingLocked} className="border-none p-0 m-0">
-              <label className="block text-sm mb-1">Title</label>
-              <input name="title" defaultValue={exam.title} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
-              <label className="block text-sm mb-1">Description</label>
-              <textarea name="description" rows={2} defaultValue={exam.description || ""} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-sm mb-1">Duration (mins)</label>
-                  <input name="duration_mins" type="number" defaultValue={exam.duration_mins || 60} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+
+              {/* Section 1 — Basic Info */}
+              <Card title="Basic Info">
+                <label className="block text-sm font-medium mb-1">Title</label>
+                <input name="title" defaultValue={exam.title} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
+                <label className="block text-sm font-medium mb-1">Instructions <span className="font-normal text-gray-400">— shown to student before timer starts</span></label>
+                <textarea name="description" rows={3} defaultValue={exam.description || ""} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Duration (mins)</label>
+                    <input name="duration_mins" type="number" min={1} defaultValue={exam.duration_mins || 60} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Max attempts</label>
+                    <input name="max_attempts" type="number" min={1} defaultValue={exam.max_attempts} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm mb-1">Max attempts</label>
-                  <input name="max_attempts" type="number" min="1" defaultValue={exam.max_attempts} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </Card>
+
+              {/* Section 2 — Schedule */}
+              <Card title="Schedule">
+                <p className="text-xs text-gray-400 mb-3">Optional — leave blank to open immediately and close manually.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Opens at</label>
+                    <input name="starts_at" type="datetime-local" defaultValue={exam.starts_at?.slice(0, 16) || ""} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Closes at</label>
+                    <input name="ends_at" id="ends_at_input" type="datetime-local" defaultValue={exam.ends_at?.slice(0, 16) || ""} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-sm mb-1">Score display</label>
-                  <select name="score_display" defaultValue={exam.score_display} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="BOTH">Both (% and marks)</option>
-                    <option value="PERCENT">Percentage only</option>
-                    <option value="MARKS">Marks only</option>
-                    <option value="NONE">None</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Pass mark %</label>
-                  <input name="pass_mark_percent" type="number" min="0" max="100" defaultValue={exam.pass_mark_percent ?? ""} placeholder="Leave blank for no pass mark" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-sm mb-1">Shuffle questions</label>
-                  <select name="shuffle_questions" defaultValue={String(exam.shuffle_questions)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="0">No</option>
-                    <option value="1">Yes</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Shuffle options</label>
-                  <select name="shuffle_options" defaultValue={String((exam as any).shuffle_options ?? 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="0">No</option>
-                    <option value="1">Yes</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-sm mb-1">Show marks during exam</label>
-                  <select name="show_marks_during" defaultValue={String((exam as any).show_marks_during ?? 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="0">No</option>
-                    <option value="1">Yes</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Allow review after submit</label>
-                  <select name="allow_review" defaultValue={String(exam.allow_review)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="1">Yes</option>
-                    <option value="0">No</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-sm mb-1">Navigation mode</label>
-                  <select name="navigation_mode" defaultValue={(exam as any).navigation_mode || "FREE"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="FREE">Free (jump between questions)</option>
-                    <option value="SEQUENTIAL">Sequential (one at a time)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Results release</label>
-                  <select name="results_release_policy" defaultValue={(exam as any).results_release_policy || "MANUAL"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="MANUAL">Manual (release when ready)</option>
-                    <option value="IMMEDIATE">Immediate (on publish)</option>
-                    <option value="AFTER_CLOSE">After exam closes</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-sm mb-1">Opens at</label>
-                  <input name="starts_at" type="datetime-local" defaultValue={exam.starts_at?.slice(0, 16) || ""} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Closes at</label>
-                  <input name="ends_at" type="datetime-local" defaultValue={exam.ends_at?.slice(0, 16) || ""} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                <div>
-                  <label className="block text-sm mb-1">Late submission policy</label>
+                <div id="late-policy-wrap" style={!exam.ends_at ? { display: "none" } : undefined}>
+                  <label className="block text-sm font-medium mb-1">Late submission policy</label>
                   <select name="late_submission_policy" defaultValue={(exam as any).late_submission_policy || "HARD_CUT"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                     <option value="HARD_CUT">Hard cut (no late submissions)</option>
-                    <option value="ALLOW_LATE">Allow late submissions</option>
+                    <option value="ALLOW_DURATION">Allow — student keeps full duration after start</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm mb-1">Exam password <span className="text-gray-400">(optional)</span></label>
-                  <input name="exam_password" defaultValue={exam.exam_password || ""} placeholder="Leave blank for no password" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </Card>
+
+              {/* Section 3 — Security */}
+              <Card title="Security">
+                <label className="block text-sm font-medium mb-1">Exam password <span className="font-normal text-gray-400">(optional)</span></label>
+                <input name="exam_password" autoComplete="off" defaultValue={exam.exam_password || ""} placeholder="Leave blank for no password" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </Card>
+
+              {/* Section 4 — Exam Behaviour */}
+              <Card title="Exam Behaviour">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium">Shuffle questions</div>
+                      <div className="text-xs text-gray-400">Each student sees questions in a different random order</div>
+                    </div>
+                    <select name="shuffle_questions" defaultValue={String(exam.shuffle_questions)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-24 flex-shrink-0">
+                      <option value="0">No</option>
+                      <option value="1">Yes</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium">Shuffle answer options</div>
+                      <div className="text-xs text-gray-400">For MCQ questions, randomise the order of options</div>
+                    </div>
+                    <select name="shuffle_options" defaultValue={String((exam as any).shuffle_options ?? 0)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-24 flex-shrink-0">
+                      <option value="0">No</option>
+                      <option value="1">Yes</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium">Show question marks during exam</div>
+                      <div className="text-xs text-gray-400">Students can see how many marks each question is worth</div>
+                    </div>
+                    <select name="show_marks_during" defaultValue={String((exam as any).show_marks_during ?? 0)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-24 flex-shrink-0">
+                      <option value="0">No</option>
+                      <option value="1">Yes</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium">Allow review after submission</div>
+                      <div className="text-xs text-gray-400">After submitting, students can re-read questions and see correct answers</div>
+                    </div>
+                    <select name="allow_review" defaultValue={String(exam.allow_review)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-24 flex-shrink-0">
+                      <option value="1">Yes</option>
+                      <option value="0">No</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-medium">Question navigation</div>
+                    </div>
+                    <select name="navigation_mode" defaultValue={(exam as any).navigation_mode || "FREE"} className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-shrink-0">
+                      <option value="FREE">Free — student can jump between any questions</option>
+                      <option value="SEQUENTIAL">Sequential — must answer in order, cannot go back</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
-              {!locked && !sittingLocked && (
+              </Card>
+
+              {/* Section 5 — Results & Grading */}
+              <Card title="Results &amp; Grading">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Results release</label>
+                    <select name="results_release_policy" defaultValue={(exam as any).results_release_policy || "MANUAL"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                      <option value="MANUAL">Manual (release when ready)</option>
+                      <option value="IMMEDIATE">Immediate (on publish)</option>
+                      <option value="AFTER_CLOSE">After exam closes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Score display</label>
+                    <select name="score_display" defaultValue={exam.score_display} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                      <option value="BOTH">Raw score and percentage</option>
+                      <option value="RAW">Raw score only</option>
+                      <option value="PERCENT">Percentage only</option>
+                      <option value="PASS_FAIL">Pass / Fail only</option>
+                      <option value="HIDDEN">Hidden — student sees no score</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Pass mark %</label>
+                    <input name="pass_mark_percent" type="number" min={0} max={100} defaultValue={exam.pass_mark_percent ?? ""} placeholder="Leave blank for no pass mark" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                </div>
+              </Card>
+
+              {/* Section 6 — Grade Bands */}
+              <Card title="Grade Bands (optional)">
+                <p className="text-xs text-gray-400 mb-3">Example: Distinction = 75%+, Credit = 65%+, Pass = 50%+</p>
+                <GradeBandsEditor initialBands={bands} />
+              </Card>
+
+              {/* Section 7 — Custom Fields */}
+              <Card title="Custom Fields (optional)">
+                <p className="text-xs text-gray-400 mb-3">Students fill these in before starting the exam. Use for things like: Index Number, Seat Number.</p>
+                <CustomFieldsEditor initialFields={customFields} />
+              </Card>
+
+            </fieldset>
+            {!locked && !sittingLocked && (
+              <div className="mt-3">
                 <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
                   Save Settings
                 </button>
-              )}
-            </fieldset>
+              </div>
+            )}
           </form>
-        </Card>
+        </>
       )}
 
       {/* Questions Tab */}
@@ -808,6 +902,13 @@ export default async function ExamBuilderPage({
                   <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Exam password</td><td className="py-1.5">{exam.exam_password || "None"}</td></tr>
                   <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Score display</td><td className="py-1.5">{exam.score_display}</td></tr>
                   <tr className="border-b border-gray-100"><td className="py-1.5 pr-4 text-gray-500">Pass mark %</td><td className="py-1.5">{exam.pass_mark_percent != null ? `${exam.pass_mark_percent}%` : "—"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 text-gray-400 w-40 text-sm">Shuffle questions</td><td className="py-1.5 text-sm">{exam.shuffle_questions ? "Yes" : "No"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 text-gray-400 w-40 text-sm">Shuffle options</td><td className="py-1.5 text-sm">{(exam as any).shuffle_options ? "Yes" : "No"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 text-gray-400 w-40 text-sm">Show marks during</td><td className="py-1.5 text-sm">{(exam as any).show_marks_during ? "Yes" : "No"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 text-gray-400 w-40 text-sm">Allow review</td><td className="py-1.5 text-sm">{exam.allow_review ? "Yes" : "No"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 text-gray-400 w-40 text-sm">Navigation mode</td><td className="py-1.5 text-sm">{(exam as any).navigation_mode || "FREE"}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 text-gray-400 w-40 text-sm">Grade bands</td><td className="py-1.5 text-sm">{bands.length > 0 ? `${bands.length} band${bands.length !== 1 ? "s" : ""}` : <span className="text-gray-300">None</span>}</td></tr>
+                  <tr className="border-b border-gray-100"><td className="py-1.5 text-gray-400 w-40 text-sm">Custom fields</td><td className="py-1.5 text-sm">{customFields.length > 0 ? `${customFields.length} field${customFields.length !== 1 ? "s" : ""}` : <span className="text-gray-300">None</span>}</td></tr>
                 </tbody>
               </table>
             </div>
