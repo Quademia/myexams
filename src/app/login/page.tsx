@@ -179,6 +179,9 @@ export default async function LoginPage({
         <p className="text-xs text-gray-400 mt-4">
           Have a join code? Go to <a href="/join" className="text-teal-700 hover:underline">/join</a>.
         </p>
+        <p className="text-xs text-gray-400 mt-1">
+          <a href="/" className="text-teal-700 hover:underline">← Back to home</a>
+        </p>
       </Card>
     </main>
   );

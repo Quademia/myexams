@@ -243,9 +243,12 @@ export default async function JoinPage({
         <Card>
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-bold">Join a school or course</h1>
-            <a href={isLoggedIn ? "/" : "/login"} className="text-sm text-teal-700 hover:underline">
-              {isLoggedIn ? "Dashboard" : "Login"}
-            </a>
+            <div className="flex gap-3 text-sm">
+              <a href="/" className="text-teal-700 hover:underline">Home</a>
+              <a href={isLoggedIn ? "/" : "/login"} className="text-teal-700 hover:underline">
+                {isLoggedIn ? "Dashboard" : "Login"}
+              </a>
+            </div>
           </div>
           <p className="text-sm text-gray-500 mb-3">Enter your join code.</p>
           <form action={checkCodeAction}>
