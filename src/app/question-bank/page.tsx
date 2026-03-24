@@ -32,7 +32,7 @@ async function createBankQuestionAction(formData: FormData) {
   const questionType = (formData.get("question_type") as string || "MCQ").trim();
   const marks = parseInt(formData.get("marks") as string || "1") || 1;
   const modelAnswer = (formData.get("model_answer") as string || "").trim() || null;
-  const visibility = (formData.get("visibility") as string || "PRIVATE").trim();
+  const visibility = (formData.get("visibility") as string || "PERSONAL").trim();
 
   // Validate: question text is required.
   if (!questionText) redirect("/question-bank");
@@ -240,8 +240,8 @@ export default async function QuestionBankPage({
               name="visibility"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
             >
-              {/* PRIVATE: only this teacher can use it */}
-              <option value="PRIVATE">Private (only me)</option>
+              {/* PERSONAL: only this teacher can use it */}
+              <option value="PERSONAL">Personal (only me)</option>
               {/* SCHOOL: all teachers in this school */}
               <option value="SCHOOL">School (all teachers)</option>
             </select>
