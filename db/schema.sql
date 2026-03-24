@@ -91,9 +91,13 @@ CREATE TABLE IF NOT EXISTS course_teachers (
 
 -- 7. enrollments — student <-> course link
 CREATE TABLE IF NOT EXISTS enrollments (
+  id          TEXT,
   course_id   TEXT NOT NULL,
   user_id     TEXT NOT NULL,
+  tenant_id   TEXT,
+  status      TEXT NOT NULL DEFAULT 'ACTIVE',
   created_at  TEXT NOT NULL,
+  updated_at  TEXT,
   PRIMARY KEY (course_id, user_id)
 );
 
@@ -466,3 +470,10 @@ CREATE INDEX IF NOT EXISTS idx_exam_answers_question_id ON exam_answers(question
 
 -- Grading Gate Approver Review — add attempt_id to sitting_approval_comments:
 -- ALTER TABLE sitting_approval_comments ADD COLUMN attempt_id TEXT;
+
+-- Beta-B migration — add id, tenant_id, status, updated_at to enrollments:
+-- ALTER TABLE enrollments ADD COLUMN id TEXT;
+-- ALTER TABLE enrollments ADD COLUMN tenant_id TEXT;
+-- ALTER TABLE enrollments ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE';
+-- ALTER TABLE enrollments ADD COLUMN updated_at TEXT;
+-- UPDATE enrollments SET id = lower(hex(randomblob(16))), tenant_id = (SELECT c.tenant_id FROM courses c WHERE c.id = enrollments.course_id), updated_at = enrollments.created_at WHERE id IS NULL;
