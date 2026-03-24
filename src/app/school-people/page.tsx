@@ -47,7 +47,8 @@ async function removeMemberAction(formData: FormData) {
   if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
 
   const userId = (formData.get("user_id") as string || "").trim();
-  if (!userId || userId === auth.user!.id) redirect("/school-people");
+  if (!userId) redirect("/school-people");
+  if (userId === auth.user!.id) redirect("/school-people?error=self_remove");
 
   const { all, run } = getDb();
   const now = new Date().toISOString();
@@ -67,7 +68,9 @@ async function removeMemberAction(formData: FormData) {
 
 async function checkEmailAction(formData: FormData) {
   "use server";
-  await requireAuth();
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
   const email = (formData.get("email") as string || "").toLowerCase().trim();
   if (!email) redirect("/school-people?tab=add");
 
@@ -190,6 +193,11 @@ export default async function SchoolPeoplePage({
       {params.error === "self" && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
           You cannot remove your own School Admin role.
+        </div>
+      )}
+      {params.error === "self_remove" && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
+          You cannot remove yourself.
         </div>
       )}
 
@@ -382,6 +390,7 @@ async function MembersTab({
                           <button
                             type="submit"
                             disabled={isSelf}
+                            title={isSelf ? "Cannot remove yourself" : undefined}
                             className={`px-3 py-1 text-xs font-semibold rounded-lg ${
                               isSelf
                                 ? "bg-gray-50 text-gray-300 cursor-not-allowed"
