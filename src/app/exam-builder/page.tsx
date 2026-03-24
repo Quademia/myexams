@@ -27,24 +27,33 @@ async function saveSettingsAction(formData: FormData) {
   if (!exam || exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`/exam-builder?exam_id=${examId}`);
 
   const now = new Date().toISOString();
+  const endsAt = (formData.get("ends_at") as string || "").trim() || null;
   await run(
-    `UPDATE exams SET title=?, description=?, time_limit_minutes=?, duration_mins=?,
-       shuffle_questions=?, score_display=?, pass_mark_percent=?, allow_review=?,
-       max_attempts=?, exam_password=?, starts_at=?, ends_at=?, updated_at=?
+    `UPDATE exams SET title=?, description=?, duration_mins=?, max_attempts=?,
+       starts_at=?, ends_at=?, late_submission_policy=?,
+       exam_password=?,
+       shuffle_questions=?, shuffle_options=?, show_marks_during=?,
+       allow_review=?, navigation_mode=?,
+       results_release_policy=?, score_display=?, pass_mark_percent=?,
+       updated_at=?
      WHERE id=? AND tenant_id=?`,
     [
       (formData.get("title") as string || "").trim(),
       (formData.get("description") as string || "").trim() || null,
-      parseInt(formData.get("time_limit_minutes") as string || "0") || null,
-      parseInt(formData.get("duration_mins") as string || "60") || 60,
-      formData.get("shuffle_questions") === "1" ? 1 : 0,
-      formData.get("score_display") || "BOTH",
-      (formData.get("pass_mark_percent") as string || "").trim() ? parseInt(formData.get("pass_mark_percent") as string) : null,
-      formData.get("allow_review") === "1" ? 1 : 0,
-      parseInt(formData.get("max_attempts") as string || "1") || 1,
-      (formData.get("exam_password") as string || "").trim() || null,
+      Math.max(1, parseInt(formData.get("duration_mins") as string || "60", 10)),
+      Math.max(1, parseInt(formData.get("max_attempts") as string || "1", 10)),
       (formData.get("starts_at") as string || "").trim() || null,
-      (formData.get("ends_at") as string || "").trim() || null,
+      endsAt,
+      endsAt ? (formData.get("late_submission_policy") as string || "HARD_CUT") : null,
+      (formData.get("exam_password") as string || "").trim() || null,
+      formData.get("shuffle_questions") === "1" ? 1 : 0,
+      formData.get("shuffle_options") === "1" ? 1 : 0,
+      formData.get("show_marks_during") === "1" ? 1 : 0,
+      formData.get("allow_review") === "1" ? 1 : 0,
+      formData.get("navigation_mode") || "FREE",
+      formData.get("results_release_policy") || "MANUAL",
+      formData.get("score_display") || "BOTH",
+      (formData.get("pass_mark_percent") as string || "").trim() ? parseFloat(formData.get("pass_mark_percent") as string) : null,
       now, examId, active!.tenant_id,
     ]
   );
@@ -98,9 +107,25 @@ async function publishAction(formData: FormData) {
   if (!active) redirect("/");
 
   const examId = formData.get("exam_id") as string;
-  const { run } = getDb();
-  await run("UPDATE exams SET status='PUBLISHED', updated_at=? WHERE id=? AND tenant_id=? AND status='DRAFT'",
-    [new Date().toISOString(), examId, active!.tenant_id]);
+  const { first, run } = getDb();
+  const now = new Date().toISOString();
+
+  // Verify exam exists and is DRAFT.
+  const exam = await first<{ status: string; results_release_policy: string | null }>(
+    "SELECT status, results_release_policy FROM exams WHERE id=? AND tenant_id=?", [examId, active!.tenant_id]
+  );
+  if (!exam || exam.status !== "DRAFT") redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
+
+  // Must have at least one question to publish.
+  const qCount = await first<{ c: number }>("SELECT COUNT(*) AS c FROM exam_questions WHERE exam_id=?", [examId]);
+  if (!qCount || Number(qCount.c) === 0) redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
+
+  // If results_release_policy is IMMEDIATE, auto-release results on publish.
+  const releaseOnPublish = exam.results_release_policy === "IMMEDIATE";
+  await run(
+    `UPDATE exams SET status='PUBLISHED', published_at=?, published_by=?, updated_at=?${releaseOnPublish ? ", results_published_at=?" : ""} WHERE id=?`,
+    releaseOnPublish ? [now, auth.user!.id, now, now, examId] : [now, auth.user!.id, now, examId]
+  );
   redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
 }
 
@@ -111,9 +136,18 @@ async function closeAction(formData: FormData) {
   if (!active) redirect("/");
 
   const examId = formData.get("exam_id") as string;
-  const { run } = getDb();
-  await run("UPDATE exams SET status='CLOSED', closed_at=?, updated_at=? WHERE id=? AND tenant_id=?",
-    [new Date().toISOString(), new Date().toISOString(), examId, active!.tenant_id]);
+  const { first, run } = getDb();
+  const now = new Date().toISOString();
+
+  // Check results_release_policy — auto-release results if AFTER_CLOSE.
+  const exam = await first<{ results_release_policy: string | null }>(
+    "SELECT results_release_policy FROM exams WHERE id=? AND tenant_id=?", [examId, active!.tenant_id]
+  );
+  const releaseOnClose = exam?.results_release_policy === "AFTER_CLOSE";
+  await run(
+    `UPDATE exams SET status='CLOSED', closed_at=?, updated_at=?${releaseOnClose ? ", results_published_at=?" : ""} WHERE id=?`,
+    releaseOnClose ? [now, now, now, examId] : [now, now, examId]
+  );
   redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
 }
 
@@ -141,13 +175,19 @@ async function addAccessClassAction(formData: FormData) {
   const { all, first, run } = getDb();
   const now = new Date().toISOString();
 
-  const students = await all<{ user_id: string }>("SELECT user_id FROM class_students WHERE class_id=?", [classId]);
-  for (const s of students) {
-    const exists = await first("SELECT 1 FROM exam_access WHERE exam_id=? AND user_id=?", [examId, s.user_id]);
-    if (!exists) {
-      await run("INSERT INTO exam_access (id, exam_id, user_id, created_at) VALUES (?,?,?,?)",
-        [crypto.randomUUID(), examId, s.user_id, now]);
-    }
+  // Validate class belongs to tenant.
+  const cls = await first("SELECT id FROM classes WHERE id=? AND tenant_id=?", [classId, active.tenant_id]);
+  if (!cls) redirect(`/exam-builder?exam_id=${examId}&tab=access`);
+
+  // Use NOT IN subquery to only fetch students not already in access (matches old code).
+  const toAdd = await all<{ user_id: string }>(
+    `SELECT cs.user_id FROM class_students cs
+     WHERE cs.class_id=? AND cs.user_id NOT IN (SELECT user_id FROM exam_access WHERE exam_id=?)`,
+    [classId, examId]
+  );
+  for (const s of toAdd) {
+    await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
+      [crypto.randomUUID(), examId, s.user_id, auth.user!.id, now]);
   }
   redirect(`/exam-builder?exam_id=${examId}&tab=access`);
 }
@@ -160,17 +200,19 @@ async function addAccessCourseAction(formData: FormData) {
 
   const examId = formData.get("exam_id") as string;
   const { first, all, run } = getDb();
-  const exam = await first<{ course_id: string }>("SELECT course_id FROM exams WHERE id=?", [examId]);
+  const exam = await first<{ course_id: string }>("SELECT course_id FROM exams WHERE id=? AND tenant_id=?", [examId, active.tenant_id]);
   if (!exam) redirect(`/exam-builder?exam_id=${examId}&tab=access`);
 
   const now = new Date().toISOString();
-  const enrolled = await all<{ user_id: string }>("SELECT user_id FROM enrollments WHERE course_id=?", [exam.course_id]);
-  for (const s of enrolled) {
-    const exists = await first("SELECT 1 FROM exam_access WHERE exam_id=? AND user_id=?", [examId, s.user_id]);
-    if (!exists) {
-      await run("INSERT INTO exam_access (id, exam_id, user_id, created_at) VALUES (?,?,?,?)",
-        [crypto.randomUUID(), examId, s.user_id, now]);
-    }
+  // Use NOT IN subquery (matches old code pattern).
+  const toAdd = await all<{ user_id: string }>(
+    `SELECT e.user_id FROM enrollments e
+     WHERE e.course_id=? AND e.user_id NOT IN (SELECT user_id FROM exam_access WHERE exam_id=?)`,
+    [exam.course_id, examId]
+  );
+  for (const s of toAdd) {
+    await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
+      [crypto.randomUUID(), examId, s.user_id, auth.user!.id, now]);
   }
   redirect(`/exam-builder?exam_id=${examId}&tab=access`);
 }
@@ -186,10 +228,17 @@ async function addAccessStudentAction(formData: FormData) {
   const { first, run } = getDb();
   const now = new Date().toISOString();
 
+  // Validate student is an active STUDENT member (matches old code).
+  const member = await first(
+    "SELECT 1 AS x FROM memberships WHERE user_id=? AND tenant_id=? AND role='STUDENT' AND status='ACTIVE' LIMIT 1",
+    [userId, active.tenant_id]
+  );
+  if (!member) redirect(`/exam-builder?exam_id=${examId}&tab=access`);
+
   const exists = await first("SELECT 1 FROM exam_access WHERE exam_id=? AND user_id=?", [examId, userId]);
   if (!exists) {
-    await run("INSERT INTO exam_access (id, exam_id, user_id, created_at) VALUES (?,?,?,?)",
-      [crypto.randomUUID(), examId, userId, now]);
+    await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
+      [crypto.randomUUID(), examId, userId, auth.user!.id, now]);
   }
   redirect(`/exam-builder?exam_id=${examId}&tab=access`);
 }
@@ -202,8 +251,13 @@ async function removeAccessAction(formData: FormData) {
 
   const examId = formData.get("exam_id") as string;
   const accessId = formData.get("access_id") as string;
-  const { run } = getDb();
-  await run("DELETE FROM exam_access WHERE id=?", [accessId]);
+  const { first, run } = getDb();
+
+  // Don't allow removal on closed exams (matches old code).
+  const exam = await first<{ status: string }>("SELECT status FROM exams WHERE id=? AND tenant_id=?", [examId, active.tenant_id]);
+  if (exam?.status === "CLOSED") redirect(`/exam-builder?exam_id=${examId}&tab=access`);
+
+  await run("DELETE FROM exam_access WHERE id=? AND exam_id=?", [accessId, examId]);
   redirect(`/exam-builder?exam_id=${examId}&tab=access`);
 }
 
@@ -385,10 +439,43 @@ export default async function ExamBuilderPage({
                   </select>
                 </div>
                 <div>
+                  <label className="block text-sm mb-1">Shuffle options</label>
+                  <select name="shuffle_options" defaultValue={String((exam as any).shuffle_options ?? 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="0">No</option>
+                    <option value="1">Yes</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-sm mb-1">Show marks during exam</label>
+                  <select name="show_marks_during" defaultValue={String((exam as any).show_marks_during ?? 0)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="0">No</option>
+                    <option value="1">Yes</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm mb-1">Allow review after submit</label>
                   <select name="allow_review" defaultValue={String(exam.allow_review)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                     <option value="1">Yes</option>
                     <option value="0">No</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-sm mb-1">Navigation mode</label>
+                  <select name="navigation_mode" defaultValue={(exam as any).navigation_mode || "FREE"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="FREE">Free (jump between questions)</option>
+                    <option value="SEQUENTIAL">Sequential (one at a time)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Results release</label>
+                  <select name="results_release_policy" defaultValue={(exam as any).results_release_policy || "MANUAL"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="MANUAL">Manual (release when ready)</option>
+                    <option value="IMMEDIATE">Immediate (on publish)</option>
+                    <option value="AFTER_CLOSE">After exam closes</option>
                   </select>
                 </div>
               </div>
@@ -402,8 +489,19 @@ export default async function ExamBuilderPage({
                   <input name="ends_at" type="datetime-local" defaultValue={exam.ends_at?.slice(0, 16) || ""} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                 </div>
               </div>
-              <label className="block text-sm mb-1">Exam password <span className="text-gray-400">(optional)</span></label>
-              <input name="exam_password" defaultValue={exam.exam_password || ""} placeholder="Leave blank for no password" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="block text-sm mb-1">Late submission policy</label>
+                  <select name="late_submission_policy" defaultValue={(exam as any).late_submission_policy || "HARD_CUT"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="HARD_CUT">Hard cut (no late submissions)</option>
+                    <option value="ALLOW_LATE">Allow late submissions</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Exam password <span className="text-gray-400">(optional)</span></label>
+                  <input name="exam_password" defaultValue={exam.exam_password || ""} placeholder="Leave blank for no password" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
               {!locked && (
                 <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
                   Save Settings
@@ -467,7 +565,8 @@ async function QuestionsTab({ examId, locked }: { examId: string; locked: boolea
   const questions = await all<{
     id: string; question_type: string; question_text: string;
     marks: number; sort_order: number; bank_question_id: string | null;
-  }>("SELECT id, question_type, question_text, marks, sort_order, bank_question_id FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC", [examId]);
+    partial_marking: number | null; model_answer: string | null; feedback: string | null;
+  }>("SELECT id, question_type, question_text, marks, sort_order, partial_marking, model_answer, feedback, bank_question_id FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC", [examId]);
 
   const allOptions = questions.length > 0 ? await all<{
     question_id: string; option_text: string; is_correct: number;
@@ -508,6 +607,9 @@ async function QuestionsTab({ examId, locked }: { examId: string; locked: boolea
                         </span>
                         {q.bank_question_id && (
                           <span className="inline-block px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-semibold">From bank</span>
+                        )}
+                        {q.partial_marking === 1 && (
+                          <span className="inline-block px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold">Partial marks</span>
                         )}
                       </div>
                       <div className="text-sm mb-1">{q.question_text}</div>
