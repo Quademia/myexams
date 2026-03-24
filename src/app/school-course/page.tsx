@@ -354,7 +354,7 @@ export default async function SchoolCoursePage({
       {tab === "classes" && <ClassesTab courseId={course.id} tenantId={tid} />}
 
       {/* ---------- Join Codes Tab ---------- */}
-      {tab === "join-codes" && <JoinCodesTab courseId={course.id} tenantId={tid} newCode={newCode} dupWho={params.dup_who} dupAuto={params.dup_auto} dupMax={params.dup_max} />}
+      {tab === "join-codes" && <JoinCodesTab courseId={course.id} tenantId={tid} newCode={newCode || undefined} dupWho={params.dup_who} dupAuto={params.dup_auto} dupMax={params.dup_max} />}
     </SchoolLayout>
   );
 }
