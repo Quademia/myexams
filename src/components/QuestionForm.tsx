@@ -2,6 +2,7 @@
 
 // Client component for creating/editing exam questions.
 // Handles dynamic MCQ option adding/removing which requires client-side state.
+// Includes per-option feedback fields matching the old build.
 
 import { useState } from "react";
 
@@ -13,7 +14,7 @@ type QuestionData = {
   partial_marking: number;
   model_answer: string | null;
   feedback: string | null;
-  options: { option_text: string; is_correct: number }[];
+  options: { option_text: string; is_correct: number; feedback: string | null }[];
 };
 
 export function QuestionForm({
@@ -27,13 +28,13 @@ export function QuestionForm({
   addAction: (formData: FormData) => void;
   editAction: (formData: FormData) => void;
   initial?: QuestionData;
-  onCancel?: string; // URL to redirect on cancel
+  onCancel?: string;
 }) {
   const isEditing = !!initial?.id;
   const [qType, setQType] = useState(initial?.question_type || "MCQ");
-  const [options, setOptions] = useState<{ text: string; correct: boolean }[]>(
-    initial?.options?.map(o => ({ text: o.option_text, correct: o.is_correct === 1 })) ||
-    [{ text: "", correct: true }, { text: "", correct: false }, { text: "", correct: false }, { text: "", correct: false }]
+  const [options, setOptions] = useState<{ text: string; correct: boolean; feedback: string }[]>(
+    initial?.options?.map(o => ({ text: o.option_text, correct: o.is_correct === 1, feedback: o.feedback || "" })) ||
+    [{ text: "", correct: true, feedback: "" }, { text: "", correct: false, feedback: "" }, { text: "", correct: false, feedback: "" }, { text: "", correct: false, feedback: "" }]
   );
   const [tfCorrect, setTfCorrect] = useState(
     initial?.options?.find(o => o.is_correct === 1)?.option_text === "False" ? "False" : "True"
@@ -41,9 +42,8 @@ export function QuestionForm({
 
   const needsOptions = qType === "MCQ" || qType === "MULTIPLE_SELECT";
   const isTF = qType === "TRUE_FALSE";
-  const isText = qType === "SHORT_ANSWER" || qType === "ESSAY";
 
-  const addOption = () => setOptions([...options, { text: "", correct: false }]);
+  const addOption = () => setOptions([...options, { text: "", correct: false, feedback: "" }]);
   const removeOption = (idx: number) => {
     if (options.length <= 2) return;
     setOptions(options.filter((_, i) => i !== idx));
@@ -112,46 +112,57 @@ export function QuestionForm({
         )}
       </div>
 
-      {/* MCQ / Multiple Select options */}
+      {/* MCQ / Multiple Select options with per-option feedback */}
       {needsOptions && (
         <div>
           <label className="block text-sm font-medium mb-2">
             Options {qType === "MCQ" ? "(select one correct)" : "(select all correct)"}
           </label>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {options.map((opt, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <input
-                  type={qType === "MCQ" ? "radio" : "checkbox"}
-                  name={qType === "MCQ" ? "opt_correct[]" : "opt_correct[]"}
-                  value={String(i)}
-                  checked={opt.correct}
-                  onChange={() => {
-                    if (qType === "MCQ") {
-                      setOptions(options.map((o, j) => ({ ...o, correct: j === i })));
-                    } else {
-                      setOptions(options.map((o, j) => j === i ? { ...o, correct: !o.correct } : o));
-                    }
-                  }}
-                  className="shrink-0"
-                />
+              <div key={i} className="border border-gray-200 rounded-lg p-2 space-y-1">
+                <div className="flex gap-2 items-center">
+                  <input
+                    type={qType === "MCQ" ? "radio" : "checkbox"}
+                    name="opt_correct[]"
+                    value={String(i)}
+                    checked={opt.correct}
+                    onChange={() => {
+                      if (qType === "MCQ") {
+                        setOptions(options.map((o, j) => ({ ...o, correct: j === i })));
+                      } else {
+                        setOptions(options.map((o, j) => j === i ? { ...o, correct: !o.correct } : o));
+                      }
+                    }}
+                    className="shrink-0"
+                  />
+                  <input
+                    type="text"
+                    name="opt_text[]"
+                    value={opt.text}
+                    onChange={(e) => setOptions(options.map((o, j) => j === i ? { ...o, text: e.target.value } : o))}
+                    placeholder={`Option ${i + 1}`}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  {options.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removeOption(i)}
+                      className="px-2 py-1 text-red-500 text-xs hover:bg-red-50 rounded"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
-                  name="opt_text[]"
-                  value={opt.text}
-                  onChange={(e) => setOptions(options.map((o, j) => j === i ? { ...o, text: e.target.value } : o))}
-                  placeholder={`Option ${i + 1}`}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  name="opt_feedback[]"
+                  value={opt.feedback}
+                  onChange={(e) => setOptions(options.map((o, j) => j === i ? { ...o, feedback: e.target.value } : o))}
+                  placeholder="Option feedback (optional — shown after grading)"
+                  className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-500 ml-6"
+                  style={{ width: "calc(100% - 1.5rem)" }}
                 />
-                {options.length > 2 && (
-                  <button
-                    type="button"
-                    onClick={() => removeOption(i)}
-                    className="px-2 py-1 text-red-500 text-xs hover:bg-red-50 rounded"
-                  >
-                    ✕
-                  </button>
-                )}
               </div>
             ))}
           </div>

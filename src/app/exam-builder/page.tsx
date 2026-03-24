@@ -13,6 +13,70 @@ import { TabNav } from "@/components/TabNav";
 import { QuestionForm } from "@/components/QuestionForm";
 
 // ============================================================
+// Helper: save/sync question to personal question bank
+// ============================================================
+
+async function saveToBankHelper(
+  run: (sql: string, params: unknown[]) => Promise<unknown>,
+  first: <T = Record<string, unknown>>(sql: string, params: unknown[]) => Promise<T | null>,
+  bankId: string | null,
+  tenantId: string,
+  userId: string,
+  qType: string, qText: string, marks: number, partialMarking: number,
+  modelAnswer: string | null, feedback: string | null,
+  formData: FormData, now: string
+) {
+  if (bankId) {
+    // Update existing bank question.
+    const existing = await first("SELECT id FROM question_bank WHERE id=? AND tenant_id=?", [bankId, tenantId]);
+    if (existing) {
+      await run(
+        "UPDATE question_bank SET question_type=?, question_text=?, marks=?, partial_marking=?, model_answer=?, feedback=?, updated_at=? WHERE id=?",
+        [qType, qText, marks, partialMarking, modelAnswer, feedback, now, bankId]
+      );
+      // Rebuild bank options.
+      await run("DELETE FROM question_bank_options WHERE bank_question_id=?", [bankId]);
+      await saveBankOptions(run, bankId, qType, formData, now);
+      return;
+    }
+  }
+  // Create new bank question.
+  const newBankId = crypto.randomUUID();
+  await run(
+    `INSERT INTO question_bank (id, tenant_id, created_by, question_type, question_text, marks, partial_marking, model_answer, feedback, visibility, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,'PERSONAL',?,?)`,
+    [newBankId, tenantId, userId, qType, qText, marks, partialMarking, modelAnswer, feedback, now, now]
+  );
+  await saveBankOptions(run, newBankId, qType, formData, now);
+}
+
+async function saveBankOptions(
+  run: (sql: string, params: unknown[]) => Promise<unknown>,
+  bankId: string, qType: string, formData: FormData, now: string
+) {
+  if (qType === "TRUE_FALSE") {
+    const correct = (formData.get("tf_correct") as string || "True").trim();
+    await run("INSERT INTO question_bank_options (id, bank_question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+      [crypto.randomUUID(), bankId, "True", correct === "True" ? 1 : 0, null, 1, now]);
+    await run("INSERT INTO question_bank_options (id, bank_question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+      [crypto.randomUUID(), bankId, "False", correct === "False" ? 1 : 0, null, 2, now]);
+  } else if (qType === "MCQ" || qType === "MULTIPLE_SELECT") {
+    const texts = formData.getAll("opt_text[]") as string[];
+    const feedbacks = formData.getAll("opt_feedback[]") as string[];
+    const correctRaw = formData.getAll("opt_correct[]") as string[];
+    const correctSet = new Set(correctRaw.map(v => String(v)));
+    for (let i = 0; i < texts.length; i++) {
+      const text = (texts[i] || "").trim();
+      if (!text) continue;
+      const isCorrect = correctSet.has(String(i)) ? 1 : 0;
+      const optFeedback = (feedbacks[i] || "").trim() || null;
+      await run("INSERT INTO question_bank_options (id, bank_question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+        [crypto.randomUUID(), bankId, text, isCorrect, optFeedback, i + 1, now]);
+    }
+  }
+}
+
+// ============================================================
 // Server Actions
 // ============================================================
 
@@ -136,21 +200,34 @@ async function addQuestionAction(formData: FormData) {
   // Save options based on question type.
   if (qType === "TRUE_FALSE") {
     const correct = (formData.get("tf_correct") as string || "True").trim();
-    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
-      [crypto.randomUUID(), qId, "True", correct === "True" ? 1 : 0, 1, now]);
-    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
-      [crypto.randomUUID(), qId, "False", correct === "False" ? 1 : 0, 2, now]);
+    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "True", correct === "True" ? 1 : 0, null, 1, now]);
+    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "False", correct === "False" ? 1 : 0, null, 2, now]);
   } else if (qType === "MCQ" || qType === "MULTIPLE_SELECT") {
     const texts = formData.getAll("opt_text[]") as string[];
+    const feedbacks = formData.getAll("opt_feedback[]") as string[];
     const correctRaw = formData.getAll("opt_correct[]") as string[];
     const correctSet = new Set(correctRaw.map(v => String(v)));
     for (let i = 0; i < texts.length; i++) {
       const text = (texts[i] || "").trim();
       if (!text) continue;
       const isCorrect = correctSet.has(String(i)) ? 1 : 0;
-      await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
-        [crypto.randomUUID(), qId, text, isCorrect, i + 1, now]);
+      const optFeedback = (feedbacks[i] || "").trim() || null;
+      await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+        [crypto.randomUUID(), qId, text, isCorrect, optFeedback, i + 1, now]);
     }
+  }
+
+  // Auto-save to question bank (PERSONAL).
+  await saveToBankHelper(run, first, null, active.tenant_id, auth.user!.id, qType, qText, marks, partialMarking, modelAnswer, feedback, formData, now);
+  // Link exam question to bank entry.
+  const bankEntry = await first<{ id: string }>(
+    "SELECT id FROM question_bank WHERE tenant_id=? AND created_by=? AND question_text=? ORDER BY created_at DESC LIMIT 1",
+    [active.tenant_id, auth.user!.id, qText]
+  );
+  if (bankEntry) {
+    await run("UPDATE exam_questions SET bank_question_id=? WHERE id=?", [bankEntry.id, qId]);
   }
 
   redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
@@ -188,20 +265,37 @@ async function updateQuestionAction(formData: FormData) {
   await run("DELETE FROM exam_question_options WHERE question_id=?", [qId]);
   if (qType === "TRUE_FALSE") {
     const correct = (formData.get("tf_correct") as string || "True").trim();
-    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
-      [crypto.randomUUID(), qId, "True", correct === "True" ? 1 : 0, 1, now]);
-    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
-      [crypto.randomUUID(), qId, "False", correct === "False" ? 1 : 0, 2, now]);
+    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "True", correct === "True" ? 1 : 0, null, 1, now]);
+    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "False", correct === "False" ? 1 : 0, null, 2, now]);
   } else if (qType === "MCQ" || qType === "MULTIPLE_SELECT") {
     const texts = formData.getAll("opt_text[]") as string[];
+    const feedbacks = formData.getAll("opt_feedback[]") as string[];
     const correctRaw = formData.getAll("opt_correct[]") as string[];
     const correctSet = new Set(correctRaw.map(v => String(v)));
     for (let i = 0; i < texts.length; i++) {
       const text = (texts[i] || "").trim();
       if (!text) continue;
       const isCorrect = correctSet.has(String(i)) ? 1 : 0;
-      await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
-        [crypto.randomUUID(), qId, text, isCorrect, i + 1, now]);
+      const optFeedback = (feedbacks[i] || "").trim() || null;
+      await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+        [crypto.randomUUID(), qId, text, isCorrect, optFeedback, i + 1, now]);
+    }
+  }
+
+  // Auto-sync to question bank if exam is DRAFT.
+  const existingQ = await first<{ bank_question_id: string | null }>("SELECT bank_question_id FROM exam_questions WHERE id=? AND exam_id=?", [qId, examId]);
+  if (exam.status === "DRAFT") {
+    await saveToBankHelper(run, first, existingQ?.bank_question_id || null, active.tenant_id, auth.user!.id, qType, qText, marks, partialMarking, modelAnswer, feedback, formData, now);
+    if (!existingQ?.bank_question_id) {
+      const bankEntry = await first<{ id: string }>(
+        "SELECT id FROM question_bank WHERE tenant_id=? AND created_by=? AND question_text=? ORDER BY created_at DESC LIMIT 1",
+        [active.tenant_id, auth.user!.id, qText]
+      );
+      if (bankEntry) {
+        await run("UPDATE exam_questions SET bank_question_id=? WHERE id=?", [bankEntry.id, qId]);
+      }
     }
   }
 
@@ -677,9 +771,9 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
   }>("SELECT id, question_type, question_text, marks, sort_order, partial_marking, model_answer, feedback, bank_question_id FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC", [examId]);
 
   const allOptions = questions.length > 0 ? await all<{
-    question_id: string; option_text: string; is_correct: number;
+    question_id: string; option_text: string; is_correct: number; feedback: string | null;
   }>(
-    `SELECT question_id, option_text, is_correct FROM exam_question_options
+    `SELECT question_id, option_text, is_correct, feedback FROM exam_question_options
      WHERE question_id IN (${questions.map(() => "?").join(",")}) ORDER BY sort_order ASC`,
     questions.map((q) => q.id)
   ) : [];
@@ -793,7 +887,7 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
                 partial_marking: editQ.partial_marking ?? 0,
                 model_answer: editQ.model_answer,
                 feedback: editQ.feedback,
-                options: editOpts.map(o => ({ option_text: o.option_text, is_correct: o.is_correct })),
+                options: editOpts.map(o => ({ option_text: o.option_text, is_correct: o.is_correct, feedback: o.feedback })),
               }}
               onCancel={`/exam-builder?exam_id=${examId}&tab=questions`}
             />

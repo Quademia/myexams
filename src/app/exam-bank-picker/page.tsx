@@ -128,7 +128,7 @@ function qTypeBadge(t: string): string {
 export default async function ExamBankPickerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ exam_id?: string; type?: string; search?: string }>;
+  searchParams: Promise<{ exam_id?: string; type?: string; search?: string; vis?: string }>;
 }) {
   // ── Auth ──────────────────────────────────────────────────────────────────────
   const auth = await requireAuth();
@@ -144,6 +144,8 @@ export default async function ExamBankPickerPage({
 
   const filterType = params.type || "";
   const searchTerm = params.search || "";
+  const filterVis = params.vis || "";
+  const userId = auth.user!.id;
 
   // ── Data loading ──────────────────────────────────────────────────────────────
   const { first, all } = getDb();
@@ -163,26 +165,34 @@ export default async function ExamBankPickerPage({
   );
   const addedIds = new Set(alreadyAdded.map((r) => r.bank_question_id));
 
-  // Load bank questions, with optional filters.
-  let query = `SELECT id, question_type, question_text, marks, visibility, created_at
-               FROM question_bank WHERE tenant_id=?`;
-  const queryParams: (string | number)[] = [active.tenant_id];
+  // Load bank questions — teachers see their own + school-shared. JOIN users for creator name.
+  let query = `SELECT qb.id, qb.question_type, qb.question_text, qb.marks, qb.visibility, qb.created_by, u.name AS creator_name
+               FROM question_bank qb JOIN users u ON u.id = qb.created_by
+               WHERE qb.tenant_id=? AND (qb.created_by=? OR qb.visibility='SCHOOL')`;
+  const queryParams: (string | number)[] = [active.tenant_id, userId];
 
   if (filterType) {
-    query += " AND question_type=?";
+    query += " AND qb.question_type=?";
     queryParams.push(filterType);
   }
 
+  if (filterVis === "PERSONAL") {
+    query += " AND qb.created_by=? AND qb.visibility='PERSONAL'";
+    queryParams.push(userId);
+  } else if (filterVis === "SCHOOL") {
+    query += " AND qb.visibility='SCHOOL'";
+  }
+
   if (searchTerm) {
-    query += " AND question_text LIKE ?";
+    query += " AND qb.question_text LIKE ?";
     queryParams.push(`%${searchTerm}%`);
   }
 
-  query += " ORDER BY created_at DESC";
+  query += " ORDER BY qb.updated_at DESC";
 
   const bankQuestions = await all<{
     id: string; question_type: string; question_text: string;
-    marks: number; visibility: string;
+    marks: number; visibility: string; created_by: string; creator_name: string;
   }>(query, queryParams);
 
   const questionTypes = ["MCQ", "TRUE_FALSE", "SHORT_ANSWER", "ESSAY", "MULTIPLE_SELECT"];
@@ -213,7 +223,6 @@ export default async function ExamBankPickerPage({
       {/* Filter bar */}
       <Card>
         <form method="get" className="flex flex-wrap gap-2 items-end">
-          {/* Preserve exam_id in filter form */}
           <input type="hidden" name="exam_id" value={examId} />
           <div className="flex-1 min-w-40">
             <label className="block text-xs font-semibold text-gray-500 mb-1">Search</label>
@@ -238,10 +247,22 @@ export default async function ExamBankPickerPage({
               ))}
             </select>
           </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Visibility</label>
+            <select
+              name="vis"
+              defaultValue={filterVis}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+            >
+              <option value="">All</option>
+              <option value="PERSONAL">My questions only</option>
+              <option value="SCHOOL">School questions</option>
+            </select>
+          </div>
           <button type="submit" className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200">
             Filter
           </button>
-          {(filterType || searchTerm) && (
+          {(filterType || searchTerm || filterVis) && (
             <a
               href={`/exam-bank-picker?exam_id=${examId}`}
               className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 no-underline"
@@ -250,6 +271,7 @@ export default async function ExamBankPickerPage({
             </a>
           )}
         </form>
+        <p className="text-xs text-gray-400 mt-2">{bankQuestions.length} question{bankQuestions.length !== 1 ? "s" : ""} found</p>
       </Card>
 
       {/* Empty state */}
@@ -287,10 +309,15 @@ export default async function ExamBankPickerPage({
                   <span className="text-xs text-gray-400">
                     {q.marks} {Number(q.marks) === 1 ? "mark" : "marks"}
                   </span>
-                  {q.visibility === "SCHOOL" && (
-                    <span className="inline-block px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-xs">
-                      Shared
-                    </span>
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+                    q.visibility === "SCHOOL"
+                      ? "bg-teal-50 text-teal-700"
+                      : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {q.visibility === "SCHOOL" ? "School" : "Personal"}
+                  </span>
+                  {q.created_by !== userId && (
+                    <span className="text-xs text-gray-400">by {q.creator_name}</span>
                   )}
                   {alreadyIn && (
                     <span className="inline-block px-2 py-0.5 bg-teal-50 text-teal-700 rounded-full text-xs font-semibold">
