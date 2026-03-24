@@ -127,13 +127,15 @@ async function approveRequestAction(formData: FormData) {
   if (jc.revoked === 1) redirect("/school-join-codes?error=code_revoked");
   if (isIsoInPast(jc.expires_at)) redirect("/school-join-codes?error=code_expired");
   if (jc.uses_approved >= jc.max_uses) redirect("/school-join-codes?error=code_maxed");
+  // TypeScript doesn't know redirect() never returns, so we need this for type narrowing.
+  const code = jc!;
 
   // #3 — Reserve a use and CHECK that the UPDATE actually changed a row.
   // This prevents race conditions where two admins approve at the same time
   // and the code has hit its max uses.
   const reserveResult = await db
     .prepare(`UPDATE join_codes SET uses_approved = uses_approved + 1, updated_at=? WHERE id=? AND revoked=0 AND uses_approved < max_uses AND expires_at > ?`)
-    .bind(now, jc.id, now)
+    .bind(now, code.id, now)
     .run();
 
   if (Number(reserveResult?.meta?.changes || 0) === 0) {
@@ -144,7 +146,7 @@ async function approveRequestAction(formData: FormData) {
   async function unreserve() {
     await run(
       `UPDATE join_codes SET uses_approved = CASE WHEN uses_approved>0 THEN uses_approved-1 ELSE 0 END, updated_at=? WHERE id=?`,
-      [new Date().toISOString(), jc.id]
+      [new Date().toISOString(), code.id]
     );
   }
 
@@ -172,7 +174,7 @@ async function approveRequestAction(formData: FormData) {
     // Load current membership to check existing role.
     const m = await first<{ id: string; role: string; status: string }>(
       "SELECT id, role, status FROM memberships WHERE tenant_id=? AND user_id=? ORDER BY created_at ASC LIMIT 1",
-      [jc.tenant_id, userId]
+      [code.tenant_id, userId]
     );
     const curRole = (m && m.status === "ACTIVE") ? m.role : null;
 
@@ -180,23 +182,23 @@ async function approveRequestAction(formData: FormData) {
     // If user is already a TEACHER and this is a student-scope code, don't downgrade them.
     if (
       curRole === "TEACHER" &&
-      jc.role === "STUDENT" &&
-      (jc.scope === "TENANT_ROLE" || jc.scope === "COURSE_ENROLL")
+      code.role === "STUDENT" &&
+      (code.scope === "TENANT_ROLE" || code.scope === "COURSE_ENROLL")
     ) {
       await unreserve();
       redirect("/school-join-codes?error=teacher_demotion");
     }
 
     // #16 — Full role hierarchy logic, matching old applyJoinActionForUser().
-    if (jc.scope === "TENANT_ROLE") {
+    if (code.scope === "TENANT_ROLE") {
       // Never downgrade SCHOOL_ADMIN.
-      const roleToSet = curRole === "SCHOOL_ADMIN" ? "SCHOOL_ADMIN" : jc.role;
-      await ensureMembership(jc.tenant_id, userId, roleToSet);
+      const roleToSet = curRole === "SCHOOL_ADMIN" ? "SCHOOL_ADMIN" : code.role;
+      await ensureMembership(code.tenant_id, userId, roleToSet);
     }
 
-    if (jc.scope === "COURSE_ENROLL" && jc.course_id) {
+    if (code.scope === "COURSE_ENROLL" && code.course_id) {
       // Validate course is still active.
-      const courseCheck = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [jc.course_id, jc.tenant_id]);
+      const courseCheck = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [code.course_id, code.tenant_id]);
       if (!courseCheck) {
         await unreserve();
         redirect("/school-join-codes?error=code_invalid");
@@ -204,19 +206,19 @@ async function approveRequestAction(formData: FormData) {
       // Preserve SCHOOL_ADMIN; otherwise set STUDENT.
       const roleToSet = curRole === "SCHOOL_ADMIN" ? "SCHOOL_ADMIN" : "STUDENT";
       if (!curRole) {
-        await ensureMembership(jc.tenant_id, userId, roleToSet);
+        await ensureMembership(code.tenant_id, userId, roleToSet);
       }
       // Don't downgrade existing role — only create membership if none exists.
-      const ex = await first("SELECT 1 FROM enrollments WHERE course_id=? AND user_id=?", [jc.course_id, userId]);
+      const ex = await first("SELECT 1 FROM enrollments WHERE course_id=? AND user_id=?", [code.course_id, userId]);
       if (!ex) {
         await run("INSERT INTO enrollments (id, course_id, user_id, tenant_id, status, created_at, updated_at) VALUES (?,?,?,?,'ACTIVE',?,?)",
-          [crypto.randomUUID(), jc.course_id, userId, jc.tenant_id, now, now]);
+          [crypto.randomUUID(), code.course_id, userId, code.tenant_id, now, now]);
       }
     }
 
-    if (jc.scope === "COURSE_TEACHER" && jc.course_id) {
+    if (code.scope === "COURSE_TEACHER" && code.course_id) {
       // Validate course is still active.
-      const courseCheck = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [jc.course_id, jc.tenant_id]);
+      const courseCheck = await first("SELECT id FROM courses WHERE id=? AND tenant_id=? AND status='ACTIVE'", [code.course_id, code.tenant_id]);
       if (!courseCheck) {
         await unreserve();
         redirect("/school-join-codes?error=code_invalid");
@@ -224,14 +226,14 @@ async function approveRequestAction(formData: FormData) {
       // Preserve SCHOOL_ADMIN; otherwise set TEACHER.
       const roleToSet = curRole === "SCHOOL_ADMIN" ? "SCHOOL_ADMIN" : "TEACHER";
       if (!curRole) {
-        await ensureMembership(jc.tenant_id, userId, roleToSet);
+        await ensureMembership(code.tenant_id, userId, roleToSet);
       } else if (curRole !== "SCHOOL_ADMIN" && curRole !== "TEACHER") {
         // Upgrade STUDENT to TEACHER.
-        await ensureMembership(jc.tenant_id, userId, "TEACHER");
+        await ensureMembership(code.tenant_id, userId, "TEACHER");
       }
-      const ex = await first("SELECT 1 FROM course_teachers WHERE course_id=? AND user_id=?", [jc.course_id, userId]);
+      const ex = await first("SELECT 1 FROM course_teachers WHERE course_id=? AND user_id=?", [code.course_id, userId]);
       if (!ex) {
-        await run("INSERT INTO course_teachers (course_id, user_id, created_at) VALUES (?,?,?)", [jc.course_id, userId, now]);
+        await run("INSERT INTO course_teachers (course_id, user_id, created_at) VALUES (?,?,?)", [code.course_id, userId, now]);
       }
     }
   } catch {
