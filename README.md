@@ -226,13 +226,25 @@ CLAUDE.md                      ← Instructions for Claude
 - Some pages may need error handling for edge cases in data
 
 ### Immediate Priority — Complete the Migration
-Before adding new capabilities, all existing logic from the old build must work correctly in the new stack:
+
+Before adding new capabilities, all existing logic from the old build must work correctly in the new stack.
+
+**✅ Verified & Fixed (2026-03-24):**
+- System admin (`/sys`) — fully migrated, documented in `docs/feature-map.md`
+- School admin — all 8 pages verified against old code. 15 of 16 gaps fixed (see `docs/school-admin-gaps.md`)
+- Enrollments table upgraded — added `id`, `tenant_id`, `status`, `updated_at` columns
+- Join codes — 7 fixes (dates, validation, history, empty states)
+- People — self-removal protection, email check auth, tooltip
+- Classes — enrol-class-in-course now functional after schema upgrade
+
+**Still TODO:**
 - Fix exam-preview and exam-builder access for all role types
 - Fix exam-grade page
 - Build the `/attempt-take` interactive exam-taking interface
-- Verify every form action and redirect works end-to-end
-- Test all flows: login → dashboard → create exam → publish → student takes exam → grading → results
+- Verify teacher and student flows end-to-end
+- Test full flow: login → dashboard → create exam → publish → student takes exam → grading → results
 - Remove `functions/` folder once migration is fully verified
+- Confirm dialogs on destructive actions (deferred to Phase 2 — needs client-side ConfirmButton)
 
 ### Phase 2 — Unlock the Power of the New Stack
 
