@@ -179,8 +179,8 @@ None — this is a read-only dashboard. All stats fetched in parallel.
 
 **Tab 4 — Classes:**
 - Linked classes table showing class name (Year group), enrolled/total students ratio
-- Enrol Class form — dropdown of active classes with student counts + bulk enrol button
-- Unenrol Class button per linked class
+- "Enrol Class Students in This Course" form — dropdown of ALL active classes (even empty ones) with student counts + bulk enrol button. This pushes the class's students into the course, not the other way around.
+- Remove Class button per linked class (validates class exists + belongs to tenant)
 
 **Tab 5 — Join Codes:**
 - Active codes table with Revoke button
@@ -260,8 +260,8 @@ None — this is a read-only dashboard. All stats fetched in parallel.
 
 **Tab 3 — Courses:**
 - Linked courses table showing course name, enrolled/total student ratio
-- Enrol Class in Course form — dropdown of active courses + bulk enrol button
-- Unenrol button per linked course
+- "Enrol This Class's Students in a Course" form — dropdown of active courses + bulk enrol button. This pushes the class's students into the selected course.
+- Unlink button per linked course
 
 ### Actions
 
