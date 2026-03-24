@@ -10,7 +10,7 @@ import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/Card";
 import { TabNav } from "@/components/TabNav";
-import { QuestionForm } from "@/components/QuestionForm";
+import { QuestionFields } from "@/components/QuestionForm";
 import { GradeBandsEditor } from "@/components/GradeBandsEditor";
 import { CustomFieldsEditor } from "@/components/CustomFieldsEditor";
 
@@ -1230,11 +1230,10 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
                 + New question
               </a>
             </div>
-            <QuestionForm
-              examId={examId}
-              addAction={addQuestionAction}
-              editAction={updateQuestionAction}
-              initial={{
+            <form action={updateQuestionAction}>
+              <input type="hidden" name="exam_id" value={examId} />
+              <input type="hidden" name="question_id" value={editQ.id} />
+              <QuestionFields initial={{
                 id: editQ.id,
                 question_type: editQ.question_type,
                 question_text: editQ.question_text,
@@ -1243,9 +1242,17 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
                 model_answer: editQ.model_answer,
                 feedback: editQ.feedback,
                 options: editOpts.map(o => ({ option_text: o.option_text, is_correct: o.is_correct, feedback: o.feedback })),
-              }}
-              onCancel={`/exam-builder?exam_id=${examId}&tab=questions`}
-            />
+              }} />
+              <div className="flex gap-2 mt-3">
+                <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+                  Save changes
+                </button>
+                <a href={`/exam-builder?exam_id=${examId}&tab=questions`}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 no-underline">
+                  Cancel
+                </a>
+              </div>
+            </form>
           </Card>
         );
       })()}
@@ -1253,11 +1260,13 @@ async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string
       {/* Add new question form */}
       {!locked && !editQuestionId && (
         <Card title="Add New Question">
-          <QuestionForm
-            examId={examId}
-            addAction={addQuestionAction}
-            editAction={updateQuestionAction}
-          />
+          <form action={addQuestionAction}>
+            <input type="hidden" name="exam_id" value={examId} />
+            <QuestionFields />
+            <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800 mt-3">
+              Add question
+            </button>
+          </form>
         </Card>
       )}
 

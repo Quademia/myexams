@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, pickActiveMembership } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/Card";
-import { QuestionForm } from "@/components/QuestionForm";
+import { BankQuestionForm } from "@/components/BankQuestionForm";
 
 // ============================================================
 // Helper: save bank options (MCQ, Multiple Select, True/False)
@@ -408,12 +408,10 @@ WHERE qb.tenant_id=? AND (qb.created_by=? OR qb.visibility='SCHOOL')`;
       <Card title={editQ ? "Edit question" : "Add question to bank"}>
         {editQ && !editOwned ? (
           <p className="text-sm text-red-500 py-2">You can only edit your own questions.</p>
-        ) : (
-          <QuestionForm
-            examId=""
-            addAction={createBankQuestionAction}
-            editAction={updateBankQuestionAction}
-            initial={editQ ? {
+        ) : editQ ? (
+          <form action={updateBankQuestionAction}>
+            <input type="hidden" name="question_id" value={editQ.id} />
+            <BankQuestionForm initial={{
               id: editQ.id,
               question_type: editQ.question_type,
               question_text: editQ.question_text,
@@ -421,22 +419,25 @@ WHERE qb.tenant_id=? AND (qb.created_by=? OR qb.visibility='SCHOOL')`;
               partial_marking: editQ.partial_marking ?? 0,
               model_answer: editQ.model_answer,
               feedback: editQ.feedback,
+              visibility: editQ.visibility,
               options: editOpts.map(o => ({ option_text: o.option_text, is_correct: o.is_correct, feedback: o.feedback })),
-            } : undefined}
-            onCancel={editQ ? "/question-bank" : undefined}
-          >
-            <div>
-              <label className="block text-sm font-medium mb-1">Visibility</label>
-              <select
-                name="visibility"
-                defaultValue={editQ?.visibility || "PERSONAL"}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="PERSONAL">Personal (only me)</option>
-                <option value="SCHOOL">School (all teachers)</option>
-              </select>
+            }} />
+            <div className="flex gap-2 mt-3">
+              <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+                Save changes
+              </button>
+              <a href="/question-bank" className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 no-underline">
+                Cancel
+              </a>
             </div>
-          </QuestionForm>
+          </form>
+        ) : (
+          <form action={createBankQuestionAction}>
+            <BankQuestionForm />
+            <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800 mt-3">
+              Add to bank
+            </button>
+          </form>
         )}
       </Card>
     </main>

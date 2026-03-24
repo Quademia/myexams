@@ -1,12 +1,12 @@
 "use client";
 
-// Pure UI component for question fields.
-// No <form> wrapper, no server action props.
-// Parent server component wraps this in <form action={serverAction}>.
+// Pure UI component for question bank fields.
+// Same as QuestionFields but includes a visibility select.
+// No <form> wrapper — parent server component provides that.
 
 import { useState } from "react";
 
-export type QuestionData = {
+export type BankQuestionData = {
   id?: string;
   question_type: string;
   question_text: string;
@@ -14,13 +14,14 @@ export type QuestionData = {
   partial_marking: number;
   model_answer: string | null;
   feedback: string | null;
+  visibility: string;
   options: { option_text: string; is_correct: number; feedback: string | null }[];
 };
 
-export function QuestionFields({
+export function BankQuestionForm({
   initial,
 }: {
-  initial?: QuestionData;
+  initial?: BankQuestionData;
 }) {
   const [qType, setQType] = useState(initial?.question_type || "MCQ");
   const [options, setOptions] = useState<{ text: string; correct: boolean; feedback: string }[]>(
@@ -100,7 +101,7 @@ export function QuestionFields({
         )}
       </div>
 
-      {/* MCQ / Multiple Select options with per-option feedback */}
+      {/* MCQ / Multiple Select options */}
       {needsOptions && (
         <div>
           <label className="block text-sm font-medium mb-2">
@@ -203,6 +204,19 @@ export function QuestionFields({
           placeholder="Shown to students after grading..."
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
         />
+      </div>
+
+      {/* Visibility */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Visibility</label>
+        <select
+          name="visibility"
+          defaultValue={initial?.visibility || "PERSONAL"}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+        >
+          <option value="PERSONAL">Personal (only me)</option>
+          <option value="SCHOOL">School (all teachers)</option>
+        </select>
       </div>
     </div>
   );
