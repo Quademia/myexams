@@ -1,19 +1,13 @@
 // src/app/exam-preview/page.tsx
-// Exam Preview — lets teachers see exactly how an exam looks to students,
-// but in read-only mode (no answer inputs, no submission button).
-//
-// WHY THIS EXISTS:
-// Before publishing an exam, teachers need to verify the questions look
-// correct, the wording is clear, and the options are in the right order.
-// This page gives that read-only walkthrough without creating any attempt records.
-//
-// ROUTE: /exam-preview?exam_id=<id>
-// ACCESS: TEACHER or SCHOOL_ADMIN only
+// Exam Preview — pure student view of the exam.
+// No correct answers, no model answers, no feedback.
+// Also serves as the approver review page when the user has a PENDING gate response.
 
 import { redirect } from "next/navigation";
 import { requireAuth, pickActiveMembership } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/Card";
+import { PreviewToggle } from "@/components/PreviewToggle";
 
 // ============================================================
 // Server Action: Respond to gate with per-question comments
@@ -88,113 +82,24 @@ async function respondWithCommentsAction(formData: FormData) {
   redirect("/approvals");
 }
 
-// Helper: turn a question_type code into a readable label.
-function qTypeLabel(t: string): string {
-  if (t === "MCQ") return "Multiple Choice";
-  if (t === "MULTIPLE_SELECT") return "Multiple Select";
-  if (t === "TRUE_FALSE") return "True / False";
-  if (t === "SHORT_ANSWER") return "Short Answer";
-  if (t === "ESSAY") return "Essay";
-  return t;
-}
-
-function QuestionsList({ questions, optionsMap, otherCommentsByQ, myComments, isApproverMode, GATE_LABELS }: {
-  questions: { id: string; question_text: string; question_type: string; marks: number; sort_order: number; model_answer: string | null; feedback: string | null }[];
-  optionsMap: Map<string, { id: string; option_text: string; is_correct: number; sort_order: number }[]>;
-  otherCommentsByQ: Record<string, { approver_name: string; comment: string; gate_type?: string }[]>;
-  myComments: Record<string, string>;
-  isApproverMode: boolean;
-  GATE_LABELS: Record<string, string>;
-}) {
-  return (
-    <>
-      {questions.map((q, index) => {
-        const options = optionsMap.get(q.id) ?? [];
-        const isChoice = q.question_type === "MCQ" || q.question_type === "TRUE_FALSE" || q.question_type === "MULTIPLE_SELECT";
-        return (
-          <Card key={q.id}>
-            <div className="flex items-start justify-between gap-2 mb-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-6 h-6 bg-teal-700 text-white text-xs font-bold rounded-full shrink-0">{index + 1}</span>
-                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{qTypeLabel(q.question_type)}</span>
-              </div>
-              <span className="text-xs font-semibold text-gray-500 shrink-0">{q.marks} {Number(q.marks) === 1 ? "mark" : "marks"}</span>
-            </div>
-            <p className="text-sm text-gray-800 leading-relaxed mb-3">{q.question_text}</p>
-            {isChoice && options.length > 0 && (
-              <div className="space-y-2">
-                {options.map((opt) => (
-                  <div key={opt.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${opt.is_correct ? "border-green-300 bg-green-50 text-green-800" : "border-gray-200 bg-gray-50 text-gray-700"}`}>
-                    <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${opt.is_correct ? "border-green-500 bg-green-500" : "border-gray-300"}`}>
-                      {opt.is_correct && <span className="w-2 h-2 bg-white rounded-full block" />}
-                    </span>
-                    {opt.option_text}
-                    {opt.is_correct && <span className="ml-auto text-xs text-green-600 font-semibold">✓ correct</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {(q.question_type === "SHORT_ANSWER" || q.question_type === "ESSAY") && (
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-400 italic">
-                {q.question_type === "ESSAY" ? "Student writes a long-form essay here…" : "Student types a short answer here…"}
-              </div>
-            )}
-            {q.model_answer && (
-              <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-xs font-semibold text-blue-700 mb-1">Model Answer</p>
-                <p className="text-xs text-blue-800">{q.model_answer}</p>
-              </div>
-            )}
-            {q.feedback && (
-              <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg">
-                <p className="text-xs font-semibold text-gray-500 mb-1">Feedback</p>
-                <p className="text-xs text-gray-600">{q.feedback}</p>
-              </div>
-            )}
-            {(otherCommentsByQ[q.id] || []).length > 0 && (
-              <div className="mt-3 space-y-1">
-                {otherCommentsByQ[q.id].map((c, ci) => (
-                  <div key={ci} className="p-2 bg-purple-50 border border-purple-200 rounded-lg">
-                    <p className="text-[11px] font-semibold text-purple-600">{c.approver_name}{c.gate_type ? ` (${GATE_LABELS[c.gate_type] || c.gate_type})` : ""}</p>
-                    <p className="text-xs text-purple-800">{c.comment}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            {isApproverMode && (
-              <div className="mt-3">
-                <label className="block text-[11px] font-semibold text-blue-600 mb-1">Your comment on Q{index + 1} (optional)</label>
-                <textarea name={`comment_${q.id}`} rows={2} defaultValue={myComments[q.id] || ""} placeholder="Add a comment about this question…" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm bg-blue-50" />
-              </div>
-            )}
-          </Card>
-        );
-      })}
-    </>
-  );
-}
+// ============================================================
+// Page Component
+// ============================================================
 
 export default async function ExamPreviewPage({
   searchParams,
 }: {
   searchParams: Promise<{ exam_id?: string }>;
 }) {
-  // ── Auth ────────────────────────────────────────────────────────────────────
-  // requireAuth() reads the session cookie. If not logged in, it redirects to /login.
-  // pickActiveMembership() tells us which school the user is currently viewing.
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
-
-  // Access: TEACHER, SCHOOL_ADMIN, system admin, or assigned approver.
   const isSystemAdmin = auth.user!.is_system_admin === 1;
   const userId = auth.user!.id;
 
-  // ── Params ──────────────────────────────────────────────────────────────────
   const params = await searchParams;
   const examId = params.exam_id;
   if (!examId) redirect("/teacher");
 
-  // ── Data loading ─────────────────────────────────────────────────────────────
   const { first, all } = getDb();
   const tenantId = active?.tenant_id;
 
@@ -247,27 +152,24 @@ export default async function ExamPreviewPage({
     "SELECT title FROM courses WHERE id=?", [exam.course_id]
   );
 
-  // Load all questions ordered by sort_order (the teacher-defined sequence).
+  // Questions — NO model_answer, NO feedback (pure student view).
   const questions = await all<{
     id: string; question_text: string; question_type: string;
-    marks: number; sort_order: number; model_answer: string | null;
-    feedback: string | null;
+    marks: number; sort_order: number;
   }>(
-    "SELECT id, question_text, question_type, marks, sort_order, model_answer, feedback FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC",
+    "SELECT id, question_text, question_type, marks, sort_order FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC",
     [examId]
   );
 
-  // For each question, load its answer options (MCQ / TRUE_FALSE need these).
-  // We use a Map so we can look up options by question_id efficiently.
-  const optionsMap = new Map<string, { id: string; option_text: string; is_correct: number; sort_order: number }[]>();
+  // Options — NO is_correct (pure student view).
+  const optionsMap = new Map<string, { option_text: string; sort_order: number }[]>();
   if (questions.length > 0) {
     const questionIds = questions.map((q) => q.id);
-    // SQLite doesn't support named params for IN lists, so we build placeholders dynamically.
     const placeholders = questionIds.map(() => "?").join(",");
     const opts = await all<{
-      id: string; question_id: string; option_text: string; is_correct: number; sort_order: number;
+      question_id: string; option_text: string; sort_order: number;
     }>(
-      `SELECT id, question_id, option_text, is_correct, sort_order FROM exam_question_options WHERE question_id IN (${placeholders}) ORDER BY sort_order ASC`,
+      `SELECT question_id, option_text, sort_order FROM exam_question_options WHERE question_id IN (${placeholders}) ORDER BY sort_order ASC`,
       questionIds
     );
     for (const opt of opts) {
@@ -278,10 +180,18 @@ export default async function ExamPreviewPage({
 
   const totalMarks = questions.reduce((sum, q) => sum + Number(q.marks), 0);
 
-  // ── Approver comments data ─────────────────────────────────────────────────
-  // Pre-fill this approver's existing comments + load other approvers' comments.
+  // Build serialisable questions array for the client component.
+  const questionsWithOptions = questions.map(q => ({
+    id: q.id,
+    question_type: q.question_type,
+    question_text: q.question_text,
+    marks: q.marks,
+    options: (optionsMap.get(q.id) ?? []).map(o => ({ option_text: o.option_text })),
+  }));
+
+  // Approver comments data.
   const myComments: Record<string, string> = {};
-  const otherCommentsByQ: Record<string, { approver_name: string; comment: string; gate_type?: string }[]> = {};
+  const otherCommentsByQ: Record<string, { approver_name: string; comment: string }[]> = {};
 
   if (isApproverMode && tenantId) {
     const myRows = await all<{ question_id: string; comment: string }>(
@@ -290,7 +200,6 @@ export default async function ExamPreviewPage({
     );
     for (const c of myRows) myComments[c.question_id] = c.comment;
 
-    // All comments on this gate (all approvers).
     const allComments = await all<{ question_id: string; approver_id: string; comment: string; approver_name: string }>(
       `SELECT sac.question_id, sac.approver_id, sac.comment, u.name AS approver_name
        FROM sitting_approval_comments sac JOIN users u ON u.id = sac.approver_id
@@ -299,12 +208,11 @@ export default async function ExamPreviewPage({
       [examId, approverGateType, tenantId]
     );
     for (const c of allComments) {
-      if (c.approver_id === userId) continue; // Skip own — shown in textarea.
+      if (c.approver_id === userId) continue;
       if (!otherCommentsByQ[c.question_id]) otherCommentsByQ[c.question_id] = [];
       otherCommentsByQ[c.question_id].push({ approver_name: c.approver_name, comment: c.comment });
     }
   } else if (!isApproverMode && tenantId && active && (active.role === "SCHOOL_ADMIN" || active.role === "TEACHER")) {
-    // Teacher/admin sees all comments across all gates (read-only).
     const allComments = await all<{ question_id: string; comment: string; approver_name: string; gate_type: string }>(
       `SELECT sac.question_id, sac.gate_type, sac.comment, u.name AS approver_name
        FROM sitting_approval_comments sac JOIN users u ON u.id = sac.approver_id
@@ -314,36 +222,43 @@ export default async function ExamPreviewPage({
     );
     for (const c of allComments) {
       if (!otherCommentsByQ[c.question_id]) otherCommentsByQ[c.question_id] = [];
-      otherCommentsByQ[c.question_id].push({ approver_name: c.approver_name, comment: c.comment, gate_type: c.gate_type });
+      otherCommentsByQ[c.question_id].push({ approver_name: c.approver_name, comment: c.comment });
     }
   }
 
   const GATE_LABELS: Record<string, string> = { QUESTIONS: "Questions", GRADING: "Grading", RESULTS: "Results" };
+
+  // Back link logic — match old build.
+  const isTeacherOrAdmin = active && (active.role === "TEACHER" || active.role === "SCHOOL_ADMIN");
+  const backHref = isTeacherOrAdmin ? `/exam-builder?exam_id=${examId}` : "/approvals";
+  const backLabel = isTeacherOrAdmin ? "← Exam Builder" : "← Approval Inbox";
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <main className="max-w-2xl mx-auto p-4 mt-4">
       {/* Header card */}
       <Card>
-        <a href={`/exam-builder?exam_id=${examId}`} className="text-sm text-gray-400 hover:underline">
-          ← Back to Exam Builder
+        <a href={backHref} className="text-sm text-gray-400 hover:underline">
+          {backLabel}
         </a>
         <div className="mt-2 flex items-start justify-between gap-2">
           <div>
             <h1 className="text-lg font-bold">{exam.title}</h1>
             {course && <div className="text-sm text-gray-500">{course.title}</div>}
           </div>
-          {/* Mode badge */}
-          <span className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full shrink-0 ${
-            isApproverMode ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"
-          }`}>
-            {isApproverMode ? `Approver Review — ${GATE_LABELS[approverGateType!] || approverGateType}` : "Preview Mode"}
-          </span>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <span className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full shrink-0 ${
+              exam.status === "PUBLISHED" ? "bg-green-50 text-green-700" : exam.status === "CLOSED" ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-500"
+            }`}>
+              {exam.status}
+            </span>
+            <span className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full shrink-0 ${
+              isApproverMode ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"
+            }`}>
+              {isApproverMode ? `Approver Review — ${GATE_LABELS[approverGateType!] || approverGateType} Gate` : "Preview Mode"}
+            </span>
+          </div>
         </div>
-
-        {exam.description && (
-          <p className="mt-3 text-sm text-gray-600">{exam.description}</p>
-        )}
 
         {/* Exam metadata grid */}
         <div className="mt-3 grid grid-cols-3 gap-3 text-center text-sm">
@@ -360,64 +275,79 @@ export default async function ExamPreviewPage({
             <div className="text-xs text-gray-500 mt-0.5">Minutes</div>
           </div>
         </div>
-
-        {exam.pass_mark_percent !== null && (
-          <p className="mt-2 text-xs text-gray-400">Pass mark: {exam.pass_mark_percent}%</p>
-        )}
       </Card>
 
-      {/* No questions yet */}
+      {/* Approver banner */}
+      {isApproverMode && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-sm text-amber-800">
+          👁️ You are reviewing this exam for the <strong>{GATE_LABELS[approverGateType!] || approverGateType} Gate</strong>. Leave comments on individual questions below, then approve or reject at the bottom.
+        </div>
+      )}
+
+      {/* Empty state */}
       {questions.length === 0 && (
         <Card>
           <p className="text-sm text-gray-500 text-center py-4">
             No questions have been added to this exam yet.{" "}
-            <a href={`/exam-builder?exam_id=${examId}&tab=questions`} className="text-teal-700 underline">
-              Add questions →
-            </a>
+            {isTeacherOrAdmin && (
+              <a href={`/exam-builder?exam_id=${examId}&tab=questions`} className="text-teal-700 underline">
+                Add questions →
+              </a>
+            )}
           </p>
         </Card>
       )}
 
-      {/* Wrap in form when in approver mode so comment fields + approve/reject submit together */}
-      {isApproverMode ? (
+      {/* Questions + Approve/Reject */}
+      {questions.length > 0 && isApproverMode ? (
         <form action={respondWithCommentsAction}>
           <input type="hidden" name="exam_id" value={examId} />
           <input type="hidden" name="gate_type" value={approverGateType!} />
-          <QuestionsList questions={questions} optionsMap={optionsMap} otherCommentsByQ={otherCommentsByQ} myComments={myComments} isApproverMode={isApproverMode} GATE_LABELS={GATE_LABELS} />
 
-          {/* Approve / Reject form */}
-          {questions.length > 0 && (
-            <Card>
-              <div className="font-bold text-base mb-2">Submit Your Review</div>
-              <label className="block text-xs text-gray-500 mb-1">Overall note (optional)</label>
-              <textarea name="note" rows={2} placeholder="Add a note…" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
-              <div className="flex gap-3">
-                <button name="response" value="APPROVED" type="submit"
-                  className="flex-1 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                  ✓ Approve
-                </button>
-                <button name="response" value="REJECTED" type="submit"
-                  className="flex-1 py-2 bg-red-50 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-100">
-                  ✗ Reject
-                </button>
-              </div>
-            </Card>
-          )}
+          <PreviewToggle
+            questions={questionsWithOptions}
+            isApproverMode={true}
+            approverGateType={approverGateType}
+            myComments={myComments}
+            otherCommentsByQ={otherCommentsByQ}
+            examId={examId}
+          />
+
+          <Card>
+            <div className="font-bold text-base mb-2">Submit Your Review</div>
+            <label className="block text-xs text-gray-500 mb-1">Overall note (optional)</label>
+            <textarea name="note" rows={2} placeholder="Add a note…" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
+            <div className="flex gap-3">
+              <button name="response" value="APPROVED" type="submit"
+                className="flex-1 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+                ✓ Approve
+              </button>
+              <button name="response" value="REJECTED" type="submit"
+                className="flex-1 py-2 bg-red-50 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-100">
+                ✗ Reject
+              </button>
+            </div>
+          </Card>
 
           <div className="text-center text-xs text-gray-400 mt-2 mb-8">
             End of review — {questions.length} question{questions.length !== 1 ? "s" : ""} · {totalMarks} mark{totalMarks !== 1 ? "s" : ""} total
           </div>
         </form>
-      ) : (
+      ) : questions.length > 0 ? (
         <>
-          <QuestionsList questions={questions} optionsMap={optionsMap} otherCommentsByQ={otherCommentsByQ} myComments={myComments} isApproverMode={false} GATE_LABELS={GATE_LABELS} />
-          {questions.length > 0 && (
-            <div className="text-center text-xs text-gray-400 mt-2 mb-8">
-              End of preview — {questions.length} question{questions.length !== 1 ? "s" : ""} · {totalMarks} mark{totalMarks !== 1 ? "s" : ""} total
-            </div>
-          )}
+          <PreviewToggle
+            questions={questionsWithOptions}
+            isApproverMode={false}
+            approverGateType={null}
+            myComments={myComments}
+            otherCommentsByQ={otherCommentsByQ}
+            examId={examId}
+          />
+          <div className="text-center text-xs text-gray-400 mt-2 mb-8">
+            End of preview — {questions.length} question{questions.length !== 1 ? "s" : ""} · {totalMarks} mark{totalMarks !== 1 ? "s" : ""} total
+          </div>
         </>
-      )}
+      ) : null}
     </main>
   );
 }
