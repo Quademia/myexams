@@ -225,13 +225,58 @@ CLAUDE.md                      ← Instructions for Claude
 - Exam preview and exam builder may error when accessed as system admin without active school — partially fixed, needs more testing
 - Some pages may need error handling for edge cases in data
 
-### Future Improvements
-- Client-side interactivity (live filtering, inline editing, expandable rows)
-- Question bank: add/edit options for MCQ questions
-- Exam builder: dynamic option row builder (currently server-rendered)
-- Join codes table: show all codes with status indicators (active/expired/revoked)
-- UI polish pass: consistent spacing, responsive design, loading states
-- The `functions/` folder can be removed once migration is fully verified
+### Immediate Priority — Complete the Migration
+Before adding new capabilities, all existing logic from the old build must work correctly in the new stack:
+- Fix exam-preview and exam-builder access for all role types
+- Fix exam-grade page
+- Build the `/attempt-take` interactive exam-taking interface
+- Verify every form action and redirect works end-to-end
+- Test all flows: login → dashboard → create exam → publish → student takes exam → grading → results
+- Remove `functions/` folder once migration is fully verified
+
+### Phase 2 — Unlock the Power of the New Stack
+
+Once existing logic is solid, these upgrades use React's client-side capabilities that weren't possible in the old stack:
+
+**1. Client-Side Interactivity (biggest upgrade)**
+- People page: live search and instant filter updates without page reloads
+- Exam builder: dynamic answer options, drag-to-reorder questions, live preview as you type
+- Student exam taking (`/attempt-take`): countdown timer, question navigation, auto-save
+- Sitting builder: expandable paper rows showing approval gates inline
+
+**2. Drawers and Panels**
+- StudentDrawer: click any student name anywhere → panel slides in with profile, courses, classes, exam results. Built once, used on People, Results, Course detail, Class detail.
+- TeacherDrawer: same concept for teachers
+- ExamDrawer: quick view of exam status and stats without navigating to full builder
+
+**3. Real-Time Feedback**
+- Form validation as you type (not after submit)
+- Success/error toast notifications that fade out (replace redirect-with-query-param pattern)
+- Optimistic updates: click "Approve" → shows approved instantly, server confirms in background
+
+**4. Better Data Display**
+- Charts: score distribution, pass/fail breakdown, average trends across sittings
+- Sortable tables: click column headers to sort client-side
+- Pagination: for schools with 500+ students
+- Bulk actions: select multiple students → enrol in course, add to class, grant exam access
+
+**5. Design System**
+- Button component with variants (primary, secondary, danger, disabled)
+- Modal component for confirmations (replace browser `confirm()` dialogs)
+- Toast notifications
+- Badge component for status indicators
+- Empty state illustrations
+
+**6. Mobile Responsiveness**
+- Responsive pass using Tailwind `md:` prefixes
+- Student exam-taking experience optimised for phones
+- Admin pages usable on tablets
+
+**7. Loading States and Performance**
+- Skeleton placeholders while data loads (React Suspense)
+- Parallel data fetching everywhere (Promise.all)
+- Code splitting: heavy pages load on demand
+- Session caching for frequently accessed data (school name, course list)
 
 ---
 
