@@ -35,23 +35,17 @@ See git history for full list. Summary: 9 HIGH (security/validation), 2 MEDIUM (
 
 ### HIGH PRIORITY — Missing Features / Security
 
-- [ ] **#ST-3 — Per-question approval comments system missing**
-  - Files: `src/app/approvals/page.tsx`
-  - Old code: Approvers can leave comments on individual questions during QUESTIONS gate approval. Comments saved to `sitting_approval_comments` table. Full question display with per-question comment fields.
-  - New code: Simple approve/reject only. No question display, no comment fields.
-  - Severity: **HIGH** — core approval workflow feature
+- [x] **#ST-3 — Per-question approval comments system missing** — Fixed 2026-03-24
+  - File: `src/app/exam-preview/page.tsx`
+  - Fix: Exam preview now has "approver mode" — when user has PENDING response, shows per-question comment textareas, other approvers' comments, and approve/reject form. Comments saved to `sitting_approval_comments` table.
 
-- [ ] **#ST-4 — Question preview in approvals flow missing**
-  - File: `src/app/approvals/page.tsx`
-  - Old code: When approver opens a QUESTIONS gate approval, the full exam with all questions is displayed for review.
-  - New code: Only shows metadata (exam title, gate type, sitting name). Approver must navigate separately to view questions.
-  - Severity: **HIGH** — approvers can't see what they're approving
+- [x] **#ST-4 — Question preview in approvals flow missing** — Fixed 2026-03-24
+  - Files: `src/app/approvals/page.tsx`, `src/app/exam-preview/page.tsx`
+  - Fix: "View exam →" link added to pending items. Links to `/exam-preview` (QUESTIONS/RESULTS) or `/exam-grade` (GRADING). Exam preview access expanded to include assigned approvers. Full questions displayed with comments overlay.
 
-- [ ] **#ST-5 — Gate disable/turn-off feature missing**
+- [x] **#ST-5 — Gate disable/turn-off feature missing** — Fixed 2026-03-24
   - File: `src/app/sitting-gate-settings/page.tsx`
-  - Old code: Can disable an entire gate at once (removes all approvers + responses in one action).
-  - New code: Can only remove approvers one by one. No bulk disable.
-  - Severity: **HIGH** — workflow friction for gate management
+  - Fix: "Disable Gate" button added next to Active badge. Bulk-deletes all approvers + pending responses for the gate in one click.
 
 - [x] **#ST-6 — Course_teachers not assigned on paper creation** — Fixed 2026-03-24
   - File: `src/app/sitting-builder/page.tsx` → `createPaperAction`
@@ -59,11 +53,9 @@ See git history for full list. Summary: 9 HIGH (security/validation), 2 MEDIUM (
 
 ### MEDIUM PRIORITY — Missing Validation / UX
 
-- [ ] **#ST-7 — Exam grade link missing in approvals for GRADING gate**
+- [x] **#ST-7 — Exam grade link missing in approvals for GRADING gate** — Fixed 2026-03-24
   - File: `src/app/approvals/page.tsx`
-  - Old code: GRADING gate items link directly to `/exam-grade?attempt_id=...&view=1`.
-  - New code: No link to view grading. Approver must navigate manually.
-  - Severity: **MEDIUM** — UX friction
+  - Fix: "View exam →" link added. GRADING items link to `/exam-grade?attempt_id=...&view=1`, others to `/exam-preview`.
 
 - [x] **#ST-8 — Course ACTIVE status not checked on paper creation** — Fixed 2026-03-24
   - File: `src/app/sitting-builder/page.tsx` → `createPaperAction`
@@ -80,17 +72,10 @@ See git history for full list. Summary: 9 HIGH (security/validation), 2 MEDIUM (
 | Area | Total | Fixed | Remaining | Deferred |
 |------|-------|-------|-----------|----------|
 | School Admin | 16 | 15 | 0 | 1 (Phase 2) |
-| Sittings & Approvals | 9 | 5 | 4 | 0 |
-| **Total** | **25** | **20** | **4** | **1** |
+| Sittings & Approvals | 9 | 9 | 0 | 0 |
+| **Total** | **25** | **24** | **0** | **1** |
 
-### Remaining Sittings Fixes (priority order)
-
-1. **#ST-5** — Gate disable feature
-2. **#ST-7** — Exam grade link in approvals
-3. **#ST-3** — Per-question approval comments
-4. **#ST-4** — Question preview in approvals
-
-*These are larger feature builds, not quick fixes.*
+All migration gaps are fixed. Only #SA-12 (confirm dialogs) remains, deferred to Phase 2.
 
 ---
 
