@@ -95,9 +95,9 @@ async function addBankQuestionToExamAction(formData: FormData) {
   for (const opt of bankOptions) {
     const optId = crypto.randomUUID();
     await run(
-      `INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?)`,
-      [optId, newQuestionId, opt.option_text, opt.is_correct, opt.sort_order, now, now]
+      `INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at)
+       VALUES (?,?,?,?,?,?)`,
+      [optId, newQuestionId, opt.option_text, opt.is_correct, opt.sort_order, now]
     );
   }
 

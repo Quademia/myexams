@@ -200,13 +200,13 @@ export default async function ExamPreviewPage({
 
   const exam = await first<{
     id: string; title: string; description: string | null;
-    duration_mins: number | null; time_limit_minutes: number | null;
+    duration_mins: number | null;
     shuffle_questions: number; pass_mark_percent: number | null;
     status: string; course_id: string;
   }>(
     tenantId
-      ? "SELECT id, title, description, duration_mins, time_limit_minutes, shuffle_questions, pass_mark_percent, status, course_id FROM exams WHERE id=? AND tenant_id=?"
-      : "SELECT id, title, description, duration_mins, time_limit_minutes, shuffle_questions, pass_mark_percent, status, course_id FROM exams WHERE id=?",
+      ? "SELECT id, title, description, duration_mins, shuffle_questions, pass_mark_percent, status, course_id FROM exams WHERE id=? AND tenant_id=?"
+      : "SELECT id, title, description, duration_mins, shuffle_questions, pass_mark_percent, status, course_id FROM exams WHERE id=?",
     tenantId ? [examId, tenantId] : [examId]
   );
   if (!exam) redirect("/teacher");
@@ -356,7 +356,7 @@ export default async function ExamPreviewPage({
             <div className="text-xs text-gray-500 mt-0.5">Total Marks</div>
           </div>
           <div className="bg-gray-50 rounded-lg p-2">
-            <div className="font-bold text-teal-700">{exam.duration_mins ?? exam.time_limit_minutes ?? "—"}</div>
+            <div className="font-bold text-teal-700">{exam.duration_mins ?? "—"}</div>
             <div className="text-xs text-gray-500 mt-0.5">Minutes</div>
           </div>
         </div>

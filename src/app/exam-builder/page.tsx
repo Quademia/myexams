@@ -10,6 +10,7 @@ import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/Card";
 import { TabNav } from "@/components/TabNav";
+import { QuestionForm } from "@/components/QuestionForm";
 
 // ============================================================
 // Server Actions
@@ -97,6 +98,113 @@ async function reorderQuestionAction(formData: FormData) {
   const a = questions[idx], b = questions[swapIdx];
   await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [b.sort_order, a.id]);
   await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [a.sort_order, b.id]);
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+}
+
+async function addQuestionAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active) redirect("/");
+
+  const examId = formData.get("exam_id") as string;
+  const { first, run } = getDb();
+
+  const exam = await first<{ status: string }>("SELECT status FROM exams WHERE id=? AND tenant_id=?", [examId, active.tenant_id]);
+  if (!exam || exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+
+  const qType = (formData.get("question_type") as string || "MCQ").trim();
+  const qText = (formData.get("question_text") as string || "").trim();
+  const marks = Math.max(0.5, parseFloat(formData.get("marks") as string || "1") || 1);
+  const feedback = (formData.get("feedback") as string || "").trim() || null;
+  const modelAnswer = qType === "SHORT_ANSWER" ? (formData.get("model_answer") as string || "").trim() || null : null;
+  const partialMarking = qType === "MULTIPLE_SELECT" ? (formData.get("partial_marking") === "1" ? 1 : 0) : 0;
+  if (!qText) redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+
+  const now = new Date().toISOString();
+  const maxOrder = await first<{ m: number | null }>("SELECT MAX(sort_order) AS m FROM exam_questions WHERE exam_id=?", [examId]);
+  const sortOrder = (Number(maxOrder?.m) || 0) + 1;
+
+  const qId = crypto.randomUUID();
+  await run(
+    `INSERT INTO exam_questions
+     (id, exam_id, tenant_id, question_type, question_text, marks, sort_order, partial_marking, model_answer, feedback, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [qId, examId, active.tenant_id, qType, qText, marks, sortOrder, partialMarking, modelAnswer, feedback, now, now]
+  );
+
+  // Save options based on question type.
+  if (qType === "TRUE_FALSE") {
+    const correct = (formData.get("tf_correct") as string || "True").trim();
+    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "True", correct === "True" ? 1 : 0, 1, now]);
+    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "False", correct === "False" ? 1 : 0, 2, now]);
+  } else if (qType === "MCQ" || qType === "MULTIPLE_SELECT") {
+    const texts = formData.getAll("opt_text[]") as string[];
+    const correctRaw = formData.getAll("opt_correct[]") as string[];
+    const correctSet = new Set(correctRaw.map(v => String(v)));
+    for (let i = 0; i < texts.length; i++) {
+      const text = (texts[i] || "").trim();
+      if (!text) continue;
+      const isCorrect = correctSet.has(String(i)) ? 1 : 0;
+      await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+        [crypto.randomUUID(), qId, text, isCorrect, i + 1, now]);
+    }
+  }
+
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+}
+
+async function updateQuestionAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active) redirect("/");
+
+  const examId = formData.get("exam_id") as string;
+  const qId = formData.get("question_id") as string;
+  const { first, run } = getDb();
+
+  const exam = await first<{ status: string }>("SELECT status FROM exams WHERE id=? AND tenant_id=?", [examId, active.tenant_id]);
+  if (!exam || !qId) redirect("/teacher");
+
+  const qType = (formData.get("question_type") as string || "MCQ").trim();
+  const qText = (formData.get("question_text") as string || "").trim();
+  const marks = Math.max(0.5, parseFloat(formData.get("marks") as string || "1") || 1);
+  const feedback = (formData.get("feedback") as string || "").trim() || null;
+  const modelAnswer = qType === "SHORT_ANSWER" ? (formData.get("model_answer") as string || "").trim() || null : null;
+  const partialMarking = qType === "MULTIPLE_SELECT" ? (formData.get("partial_marking") === "1" ? 1 : 0) : 0;
+  if (!qText) redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+
+  const now = new Date().toISOString();
+  await run(
+    `UPDATE exam_questions SET question_type=?, question_text=?, marks=?, partial_marking=?, model_answer=?, feedback=?, updated_at=?
+     WHERE id=? AND exam_id=?`,
+    [qType, qText, marks, partialMarking, modelAnswer, feedback, now, qId, examId]
+  );
+
+  // Rebuild options.
+  await run("DELETE FROM exam_question_options WHERE question_id=?", [qId]);
+  if (qType === "TRUE_FALSE") {
+    const correct = (formData.get("tf_correct") as string || "True").trim();
+    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "True", correct === "True" ? 1 : 0, 1, now]);
+    await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "False", correct === "False" ? 1 : 0, 2, now]);
+  } else if (qType === "MCQ" || qType === "MULTIPLE_SELECT") {
+    const texts = formData.getAll("opt_text[]") as string[];
+    const correctRaw = formData.getAll("opt_correct[]") as string[];
+    const correctSet = new Set(correctRaw.map(v => String(v)));
+    for (let i = 0; i < texts.length; i++) {
+      const text = (texts[i] || "").trim();
+      if (!text) continue;
+      const isCorrect = correctSet.has(String(i)) ? 1 : 0;
+      await run("INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+        [crypto.randomUUID(), qId, text, isCorrect, i + 1, now]);
+    }
+  }
+
   redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
 }
 
@@ -321,7 +429,7 @@ const qTypeLabel = (t: string) => {
 export default async function ExamBuilderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ exam_id?: string; tab?: string }>;
+  searchParams: Promise<{ exam_id?: string; tab?: string; edit_q?: string }>;
 }) {
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
@@ -513,7 +621,7 @@ export default async function ExamBuilderPage({
       )}
 
       {/* Questions Tab */}
-      {tab === "questions" && <QuestionsTab examId={exam.id} locked={locked} />}
+      {tab === "questions" && <QuestionsTab examId={exam.id} locked={locked} editQuestionId={params.edit_q} />}
 
       {/* Publish Tab */}
       {tab === "publish" && (
@@ -559,7 +667,7 @@ export default async function ExamBuilderPage({
 // Questions Tab
 // ============================================================
 
-async function QuestionsTab({ examId, locked }: { examId: string; locked: boolean }) {
+async function QuestionsTab({ examId, locked, editQuestionId }: { examId: string; locked: boolean; editQuestionId?: string }) {
   const { all } = getDb();
 
   const questions = await all<{
@@ -645,6 +753,10 @@ async function QuestionsTab({ examId, locked }: { examId: string; locked: boolea
                             </button>
                           </form>
                         </div>
+                        <a href={`/exam-builder?exam_id=${examId}&tab=questions&edit_q=${q.id}`}
+                          className="px-2 py-1 bg-gray-100 text-teal-700 text-xs rounded-lg hover:bg-gray-200 no-underline">
+                          Edit
+                        </a>
                         <form action={deleteQuestionAction}>
                           <input type="hidden" name="exam_id" value={examId} />
                           <input type="hidden" name="question_id" value={q.id} />
@@ -662,12 +774,50 @@ async function QuestionsTab({ examId, locked }: { examId: string; locked: boolea
         )}
       </Card>
 
+      {/* Edit question form — shown when edit_q param is set */}
+      {!locked && editQuestionId && (() => {
+        const editQ = questions.find(q => q.id === editQuestionId);
+        if (!editQ) return null;
+        const editOpts = optsByQ[editQ.id] || [];
+        return (
+          <Card title={`Edit Question ${questions.indexOf(editQ) + 1}`}>
+            <QuestionForm
+              examId={examId}
+              addAction={addQuestionAction}
+              editAction={updateQuestionAction}
+              initial={{
+                id: editQ.id,
+                question_type: editQ.question_type,
+                question_text: editQ.question_text,
+                marks: editQ.marks,
+                partial_marking: editQ.partial_marking ?? 0,
+                model_answer: editQ.model_answer,
+                feedback: editQ.feedback,
+                options: editOpts.map(o => ({ option_text: o.option_text, is_correct: o.is_correct })),
+              }}
+              onCancel={`/exam-builder?exam_id=${examId}&tab=questions`}
+            />
+          </Card>
+        );
+      })()}
+
+      {/* Add new question form */}
+      {!locked && !editQuestionId && (
+        <Card title="Add New Question">
+          <QuestionForm
+            examId={examId}
+            addAction={addQuestionAction}
+            editAction={updateQuestionAction}
+          />
+        </Card>
+      )}
+
+      {/* Bank picker link */}
       {!locked && (
         <Card>
           <p className="text-sm text-gray-500">
-            To add or edit questions, use the{" "}
-            <a href={`/exam-bank-picker?exam_id=${examId}`} className="text-teal-700 hover:underline">Question Bank Picker</a>{" "}
-            or the original exam builder interface.
+            Or add from the{" "}
+            <a href={`/exam-bank-picker?exam_id=${examId}`} className="text-teal-700 hover:underline">Question Bank →</a>
           </p>
         </Card>
       )}
