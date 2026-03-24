@@ -229,11 +229,12 @@ export default async function ExamBankPickerPage({
             <label className="block text-xs font-semibold text-gray-500 mb-1">Type</label>
             <select
               name="type"
+              defaultValue={filterType}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
             >
               <option value="">All types</option>
               {questionTypes.map((t) => (
-                <option key={t} value={t} selected={filterType === t}>{qTypeLabel(t)}</option>
+                <option key={t} value={t}>{qTypeLabel(t)}</option>
               ))}
             </select>
           </div>
