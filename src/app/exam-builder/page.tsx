@@ -12,6 +12,7 @@ import { Card } from "@/components/Card";
 import { TabNav } from "@/components/TabNav";
 import { GradeBandsEditor } from "@/components/GradeBandsEditor";
 import { CustomFieldsEditor } from "@/components/CustomFieldsEditor";
+import { QuestionFormFields } from "@/components/QuestionFormFields";
 
 // ============================================================
 // Server Actions
@@ -333,6 +334,301 @@ async function gateSubmitAction(formData: FormData) {
 }
 
 // ============================================================
+// Question Server Actions
+// ============================================================
+
+async function addQuestionAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || (active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN")) redirect("/");
+
+  const examId = formData.get("exam_id") as string;
+  if (!examId) redirect("/teacher");
+
+  const { first, all, run } = getDb();
+  const tid = active.tenant_id;
+  const userId = auth.user!.id;
+
+  // Verify exam belongs to this tenant.
+  const exam = await first<{ id: string; status: string }>(
+    "SELECT id, status FROM exams WHERE id=? AND tenant_id=?", [examId, tid]
+  );
+  if (!exam) redirect("/teacher");
+  if (exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+
+  const qType = (formData.get("question_type") as string) || "MCQ";
+  const qText = (formData.get("question_text") as string || "").trim();
+  if (!qText) redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+
+  const marksVal = Math.max(0.5, parseFloat(formData.get("marks") as string) || 1);
+  const pm = qType === "MULTIPLE_SELECT" ? (formData.get("partial_marking") === "1" ? 1 : 0) : 0;
+  const ma = qType === "SHORT_ANSWER" ? ((formData.get("model_answer") as string || "").trim() || null) : null;
+  const fb = (formData.get("feedback") as string || "").trim() || null;
+  const now = new Date().toISOString();
+
+  // Sort order: put at the end.
+  const lastOrder = await first<{ m: number | null }>(
+    "SELECT MAX(sort_order) AS m FROM exam_questions WHERE exam_id=?", [examId]
+  );
+  const sortOrder = (lastOrder?.m ?? 0) + 1;
+
+  // Auto-save to question bank as PERSONAL.
+  const bankId = await saveToBank(null, tid, userId, qType, qText, marksVal, pm, ma, fb, formData, now);
+
+  // Insert exam question.
+  const qId = crypto.randomUUID();
+  await run(
+    `INSERT INTO exam_questions (id, exam_id, tenant_id, question_type, question_text, marks, sort_order, partial_marking, model_answer, feedback, bank_question_id, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [qId, examId, tid, qType, qText, marksVal, sortOrder, pm, ma, fb, bankId, now, now]
+  );
+
+  // Insert options.
+  await saveQuestionOptions(qId, qType, formData, now);
+
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+}
+
+async function updateQuestionAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || (active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN")) redirect("/");
+
+  const examId = formData.get("exam_id") as string;
+  const questionId = formData.get("question_id") as string;
+  if (!examId || !questionId) redirect("/teacher");
+
+  const { first, run } = getDb();
+  const tid = active.tenant_id;
+  const userId = auth.user!.id;
+
+  const exam = await first<{ id: string; status: string }>(
+    "SELECT id, status FROM exams WHERE id=? AND tenant_id=?", [examId, tid]
+  );
+  if (!exam) redirect("/teacher");
+  if (exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+
+  const qType = (formData.get("question_type") as string) || "MCQ";
+  const qText = (formData.get("question_text") as string || "").trim();
+  if (!qText) redirect(`/exam-builder?exam_id=${examId}&tab=questions&edit_q=${questionId}`);
+
+  const marksVal = Math.max(0.5, parseFloat(formData.get("marks") as string) || 1);
+  const pm = qType === "MULTIPLE_SELECT" ? (formData.get("partial_marking") === "1" ? 1 : 0) : 0;
+  const ma = qType === "SHORT_ANSWER" ? ((formData.get("model_answer") as string || "").trim() || null) : null;
+  const fb = (formData.get("feedback") as string || "").trim() || null;
+  const now = new Date().toISOString();
+
+  // Get existing question's bank link.
+  const existingQ = await first<{ bank_question_id: string | null }>(
+    "SELECT bank_question_id FROM exam_questions WHERE id=? AND exam_id=?", [questionId, examId]
+  );
+
+  // Only sync back to bank if exam is DRAFT.
+  let bankId = existingQ?.bank_question_id ?? null;
+  if (exam.status === "DRAFT") {
+    bankId = await saveToBank(bankId, tid, userId, qType, qText, marksVal, pm, ma, fb, formData, now);
+  }
+
+  await run(
+    `UPDATE exam_questions SET question_type=?, question_text=?, marks=?, partial_marking=?, model_answer=?, feedback=?, bank_question_id=?, updated_at=?
+     WHERE id=? AND exam_id=?`,
+    [qType, qText, marksVal, pm, ma, fb, bankId, now, questionId, examId]
+  );
+
+  // Delete old options and re-insert.
+  await run("DELETE FROM exam_question_options WHERE question_id=?", [questionId]);
+  await saveQuestionOptions(questionId, qType, formData, now);
+
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+}
+
+async function deleteQuestionAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || (active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN")) redirect("/");
+
+  const examId = formData.get("exam_id") as string;
+  const questionId = formData.get("question_id") as string;
+  if (!examId || !questionId) redirect("/teacher");
+
+  const { first, all, run } = getDb();
+  const tid = active.tenant_id;
+
+  const exam = await first<{ id: string }>(
+    "SELECT id FROM exams WHERE id=? AND tenant_id=?", [examId, tid]
+  );
+  if (!exam) redirect("/teacher");
+
+  // Delete options, then the question.
+  await run("DELETE FROM exam_question_options WHERE question_id=?", [questionId]);
+  await run("DELETE FROM exam_questions WHERE id=? AND exam_id=?", [questionId, examId]);
+
+  // Renumber remaining questions so sort_order stays contiguous (1, 2, 3...).
+  const remaining = await all<{ id: string }>(
+    "SELECT id FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC", [examId]
+  );
+  for (let i = 0; i < remaining.length; i++) {
+    await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [i + 1, remaining[i].id]);
+  }
+
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+}
+
+async function reorderQuestionAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || (active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN")) redirect("/");
+
+  const examId = formData.get("exam_id") as string;
+  const questionId = formData.get("question_id") as string;
+  const direction = formData.get("direction") as string;
+  if (!examId || !questionId) redirect("/teacher");
+
+  const { all, first, run } = getDb();
+  const tid = active.tenant_id;
+
+  const exam = await first<{ id: string }>(
+    "SELECT id FROM exams WHERE id=? AND tenant_id=?", [examId, tid]
+  );
+  if (!exam) redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+
+  const questions = await all<{ id: string; sort_order: number }>(
+    "SELECT id, sort_order FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC", [examId]
+  );
+
+  const idx = questions.findIndex((q) => q.id === questionId);
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+
+  if (idx < 0 || swapIdx < 0 || swapIdx >= questions.length) {
+    redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+  }
+
+  // Swap sort_order values between the two questions.
+  const orderA = questions[idx].sort_order;
+  const orderB = questions[swapIdx].sort_order;
+  await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [orderB, questions[idx].id]);
+  await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [orderA, questions[swapIdx].id]);
+
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+}
+
+// ── Question helper: save to bank ────────────────────────────────────────────
+// Saves a question to the question_bank table. If bankId exists and is found
+// in the bank, it updates that row. Otherwise it creates a new PERSONAL entry.
+// Returns the bank question ID.
+async function saveToBank(
+  bankId: string | null, tenantId: string, userId: string,
+  qType: string, qText: string, marks: number, pm: number,
+  ma: string | null, fb: string | null,
+  formData: FormData, ts: string
+): Promise<string> {
+  const { first, run } = getDb();
+
+  if (bankId) {
+    const existing = await first<{ id: string }>(
+      "SELECT id FROM question_bank WHERE id=? AND tenant_id=?", [bankId, tenantId]
+    );
+    if (existing) {
+      await run(
+        `UPDATE question_bank SET question_type=?, question_text=?, marks=?, partial_marking=?, model_answer=?, feedback=?, updated_at=?
+         WHERE id=?`,
+        [qType, qText, marks, pm, ma, fb, ts, bankId]
+      );
+      await run("DELETE FROM question_bank_options WHERE bank_question_id=?", [bankId]);
+      await saveBankOptions(bankId, qType, formData, ts);
+      return bankId;
+    }
+  }
+
+  // Create new bank entry.
+  const newId = crypto.randomUUID();
+  await run(
+    `INSERT INTO question_bank (id, tenant_id, created_by, question_type, question_text, marks, partial_marking, model_answer, feedback, visibility, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [newId, tenantId, userId, qType, qText, marks, pm, ma, fb, "PERSONAL", ts, ts]
+  );
+  await saveBankOptions(newId, qType, formData, ts);
+  return newId;
+}
+
+// ── Question helper: save bank options ───────────────────────────────────────
+async function saveBankOptions(bankQId: string, qType: string, formData: FormData, ts: string) {
+  const { run } = getDb();
+
+  if (qType === "TRUE_FALSE") {
+    const tfCorrect = formData.get("tf_correct") as string;
+    await run(
+      "INSERT INTO question_bank_options (id, bank_question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+      [crypto.randomUUID(), bankQId, "True", tfCorrect === "True" ? 1 : 0, 1, ts]
+    );
+    await run(
+      "INSERT INTO question_bank_options (id, bank_question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+      [crypto.randomUUID(), bankQId, "False", tfCorrect === "False" ? 1 : 0, 2, ts]
+    );
+    return;
+  }
+
+  if (qType === "MCQ" || qType === "MULTIPLE_SELECT") {
+    const texts = formData.getAll("opt_text[]") as string[];
+    const correctIndices = new Set(
+      (formData.getAll("opt_correct[]") as string[]).map((v) => parseInt(v, 10))
+    );
+    const feedbacks = formData.getAll("opt_feedback[]") as string[];
+    let sortOrder = 1;
+    for (let i = 0; i < texts.length; i++) {
+      const text = (texts[i] || "").trim();
+      if (!text) continue;
+      await run(
+        "INSERT INTO question_bank_options (id, bank_question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+        [crypto.randomUUID(), bankQId, text, correctIndices.has(i) ? 1 : 0, (feedbacks[i] || "").trim() || null, sortOrder, ts]
+      );
+      sortOrder++;
+    }
+  }
+  // SHORT_ANSWER and ESSAY have no options.
+}
+
+// ── Question helper: save exam question options ──────────────────────────────
+async function saveQuestionOptions(qId: string, qType: string, formData: FormData, ts: string) {
+  const { run } = getDb();
+
+  if (qType === "TRUE_FALSE") {
+    const tfCorrect = formData.get("tf_correct") as string;
+    await run(
+      "INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "True", tfCorrect === "True" ? 1 : 0, 1, ts]
+    );
+    await run(
+      "INSERT INTO exam_question_options (id, question_id, option_text, is_correct, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+      [crypto.randomUUID(), qId, "False", tfCorrect === "False" ? 1 : 0, 2, ts]
+    );
+    return;
+  }
+
+  if (qType === "MCQ" || qType === "MULTIPLE_SELECT") {
+    const texts = formData.getAll("opt_text[]") as string[];
+    const correctIndices = new Set(
+      (formData.getAll("opt_correct[]") as string[]).map((v) => parseInt(v, 10))
+    );
+    const feedbacks = formData.getAll("opt_feedback[]") as string[];
+    let sortOrder = 1;
+    for (let i = 0; i < texts.length; i++) {
+      const text = (texts[i] || "").trim();
+      if (!text) continue;
+      await run(
+        "INSERT INTO exam_question_options (id, question_id, option_text, is_correct, feedback, sort_order, created_at) VALUES (?,?,?,?,?,?,?)",
+        [crypto.randomUUID(), qId, text, correctIndices.has(i) ? 1 : 0, (feedbacks[i] || "").trim() || null, sortOrder, ts]
+      );
+      sortOrder++;
+    }
+  }
+}
+
+// ============================================================
 // Page Component
 // ============================================================
 
@@ -642,7 +938,7 @@ export default async function ExamBuilderPage({
       )}
 
       {/* Questions Tab */}
-      {tab === "questions" && <QuestionsTab examId={exam.id} locked={locked} />}
+      {tab === "questions" && <QuestionsTab examId={exam.id} locked={locked} editQId={params.edit_q} />}
 
       {/* Publish Tab — 3 always-visible sections */}
       {tab === "publish" && (
@@ -856,11 +1152,190 @@ export default async function ExamBuilderPage({
 // Questions Tab
 // ============================================================
 
-async function QuestionsTab({ examId, locked }: { examId: string; locked: boolean }) {
+// Badge colours per question type — keeps the question list visually scannable.
+const qTypeBadge = (t: string) => {
+  if (t === "MCQ") return "bg-blue-50 text-blue-700";
+  if (t === "MULTIPLE_SELECT") return "bg-purple-50 text-purple-700";
+  if (t === "TRUE_FALSE") return "bg-green-50 text-green-700";
+  if (t === "SHORT_ANSWER") return "bg-orange-50 text-orange-700";
+  if (t === "ESSAY") return "bg-red-50 text-red-700";
+  return "bg-gray-100 text-gray-600";
+};
+
+async function QuestionsTab({ examId, locked, editQId }: { examId: string; locked: boolean; editQId?: string }) {
+  const { all } = getDb();
+
+  // Load all questions for this exam, ordered by their sort position.
+  const questions = await all<{
+    id: string; question_type: string; question_text: string; marks: number;
+    sort_order: number; partial_marking: number; model_answer: string | null;
+    feedback: string | null; bank_question_id: string | null;
+  }>(
+    "SELECT id, question_type, question_text, marks, sort_order, partial_marking, model_answer, feedback, bank_question_id FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC",
+    [examId]
+  );
+
+  // Load options for all questions in one go (more efficient than per-question queries).
+  const qIds = questions.map((q) => q.id);
+  let optionsMap: Record<string, { id: string; option_text: string; is_correct: number; feedback: string | null; sort_order: number }[]> = {};
+  if (qIds.length > 0) {
+    const placeholders = qIds.map(() => "?").join(",");
+    const allOpts = await all<{
+      id: string; question_id: string; option_text: string; is_correct: number; feedback: string | null; sort_order: number;
+    }>(
+      `SELECT id, question_id, option_text, is_correct, feedback, sort_order FROM exam_question_options WHERE question_id IN (${placeholders}) ORDER BY sort_order ASC`,
+      qIds
+    );
+    for (const opt of allOpts) {
+      if (!optionsMap[opt.question_id]) optionsMap[opt.question_id] = [];
+      optionsMap[opt.question_id].push(opt);
+    }
+  }
+
+  // Calculate summary stats for the header.
+  const totalMarks = questions.reduce((sum, q) => sum + Number(q.marks), 0);
+
+  // If editing, find the question to pre-fill the form.
+  const editQ = editQId ? questions.find((q) => q.id === editQId) : null;
+  const editOpts = editQ ? (optionsMap[editQ.id] || []) : [];
+
   return (
-    <div className="max-w-3xl mx-auto p-4">
-      <h2 className="text-lg font-bold">Questions — coming soon</h2>
-    </div>
+    <>
+      {/* Header card */}
+      <Card>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 className="text-lg font-bold">Questions</h2>
+            <p className="text-sm text-gray-500">
+              {questions.length} question{questions.length !== 1 ? "s" : ""} &middot; {totalMarks} mark{totalMarks !== 1 ? "s" : ""} total
+            </p>
+          </div>
+          {!locked && (
+            <a
+              href={`/exam-bank-picker?exam_id=${examId}`}
+              className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 no-underline"
+            >
+              📚 Add from bank
+            </a>
+          )}
+        </div>
+      </Card>
+
+      {/* Locked banner */}
+      {locked && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-3">
+          🔒 This exam is published — questions are locked and cannot be edited.
+        </div>
+      )}
+
+      {/* Question list */}
+      {questions.length === 0 && !locked && (
+        <Card>
+          <div className="text-center py-6">
+            <p className="text-sm text-gray-500">
+              No questions yet — add your first question below, or pick from your question bank.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {questions.map((q, idx) => {
+        const opts = optionsMap[q.id] || [];
+        return (
+          <Card key={q.id}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                {/* Question number, type badge, marks */}
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-sm font-bold text-gray-700">Q{idx + 1}</span>
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${qTypeBadge(q.question_type)}`}>
+                    {qTypeLabel(q.question_type)}
+                  </span>
+                  <span className="text-xs text-gray-400">{q.marks} {Number(q.marks) === 1 ? "mark" : "marks"}</span>
+                  {q.bank_question_id && (
+                    <span className="inline-block px-2 py-0.5 bg-teal-50 text-teal-700 rounded-full text-xs font-semibold">📚 From bank</span>
+                  )}
+                  {q.partial_marking === 1 && (
+                    <span className="inline-block px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs">Partial marking</span>
+                  )}
+                </div>
+
+                {/* Question text */}
+                <p className="text-sm text-gray-800 mb-2">{q.question_text}</p>
+
+                {/* Options preview for MCQ / TRUE_FALSE / MULTIPLE_SELECT */}
+                {(q.question_type === "MCQ" || q.question_type === "TRUE_FALSE" || q.question_type === "MULTIPLE_SELECT") && opts.length > 0 && (
+                  <ul className="text-xs text-gray-500 space-y-0.5 pl-1">
+                    {opts.map((opt) => (
+                      <li key={opt.id}>
+                        {opt.is_correct ? "✓" : "○"} {opt.option_text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* Action buttons (only if not locked) */}
+              {!locked && (
+                <div className="flex flex-col gap-1 shrink-0">
+                  {/* Move up */}
+                  <form action={reorderQuestionAction}>
+                    <input type="hidden" name="exam_id" value={examId} />
+                    <input type="hidden" name="question_id" value={q.id} />
+                    <input type="hidden" name="direction" value="up" />
+                    <button type="submit" disabled={idx === 0} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 disabled:opacity-30" title="Move up">↑</button>
+                  </form>
+                  {/* Move down */}
+                  <form action={reorderQuestionAction}>
+                    <input type="hidden" name="exam_id" value={examId} />
+                    <input type="hidden" name="question_id" value={q.id} />
+                    <input type="hidden" name="direction" value="down" />
+                    <button type="submit" disabled={idx === questions.length - 1} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 disabled:opacity-30" title="Move down">↓</button>
+                  </form>
+                  {/* Edit */}
+                  <a href={`/exam-builder?exam_id=${examId}&tab=questions&edit_q=${q.id}`} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 text-center no-underline">Edit</a>
+                  {/* Delete */}
+                  <form action={deleteQuestionAction}>
+                    <input type="hidden" name="exam_id" value={examId} />
+                    <input type="hidden" name="question_id" value={q.id} />
+                    <button type="submit" className="px-2 py-1 bg-red-50 text-red-600 text-xs rounded hover:bg-red-100 w-full">Delete</button>
+                  </form>
+                </div>
+              )}
+            </div>
+          </Card>
+        );
+      })}
+
+      {/* Add / Edit form (only when exam is not locked) */}
+      {!locked && (
+        <Card title={editQ ? `Edit Question Q${questions.findIndex((q) => q.id === editQId) + 1}` : "Add Question"}>
+          <form action={editQ ? updateQuestionAction : addQuestionAction}>
+            <QuestionFormFields
+              questionType={editQ?.question_type || "MCQ"}
+              options={editOpts.map((o) => ({
+                text: o.option_text,
+                isCorrect: o.is_correct === 1,
+                feedback: o.feedback || "",
+              }))}
+              tfCorrect={
+                editQ?.question_type === "TRUE_FALSE"
+                  ? (editOpts.find((o) => o.is_correct === 1)?.option_text || "")
+                  : ""
+              }
+              modelAnswer={editQ?.model_answer || ""}
+              feedback={editQ?.feedback || ""}
+              questionText={editQ?.question_text || ""}
+              marks={editQ?.marks ?? 1}
+              partialMarking={editQ?.partial_marking === 1}
+              isEdit={!!editQ}
+              questionId={editQ?.id || ""}
+              examId={examId}
+            />
+          </form>
+        </Card>
+      )}
+    </>
   );
 }
 
