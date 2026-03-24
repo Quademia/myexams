@@ -417,4 +417,192 @@ None — this is a read-only dashboard. All stats fetched in parallel.
 
 ---
 
+## Sitting Builder `/sitting-builder`
+
+**File:** `src/app/sitting-builder/page.tsx`
+**Who can access:** SCHOOL_ADMIN only.
+**Purpose:** Build and manage a sitting — configure settings, add/remove papers (exams), view results. Has 3 tabs: Settings, Papers, Results.
+
+### Actions
+
+#### Save Settings (`saveSettingsAction`)
+- Updates sitting title, academic year, status.
+
+#### Add Existing Paper (`addExistingPaperAction`)
+- Links an existing exam to the sitting. Checks for duplicates, assigns sort_order.
+
+#### Create New Paper (`createPaperAction`)
+- Creates a new exam (DRAFT) and links it to the sitting. Validates course is ACTIVE, teacher has TEACHER role. Auto-assigns teacher to course_teachers.
+
+#### Remove Paper (`removePaperAction`)
+- Removes exam from sitting (deletes from `exam_sitting_papers`).
+
+### Business rules
+- Papers table shows gate badges (Q/G/R) with approver counts
+- "Set Approvals" link per paper goes to gate settings page
+- "Edit" link per paper goes to exam builder
+
+---
+
+## Sitting Gate Settings `/sitting-gate-settings`
+
+**File:** `src/app/sitting-gate-settings/page.tsx`
+**Who can access:** SCHOOL_ADMIN only.
+**Purpose:** Assign approvers to QUESTIONS, GRADING, RESULTS gates for a specific paper in a sitting.
+
+### What the user sees
+
+Per gate (3 cards): Active/Inactive badge, assigned approvers with Remove button, "Disable Gate" button (removes all approvers at once), "Add approver" form with course + role filters.
+
+### Actions
+
+#### Add Approver (`addApproverAction`)
+- Validates user is active member. Prevents duplicates. Inserts into `sitting_approval_gates`.
+
+#### Remove Approver (`removeApproverAction`)
+- Deletes from gates + deletes pending response if exists.
+
+#### Disable Gate (`disableGateAction`)
+- Bulk-deletes all approvers + all pending responses for the gate in one action.
+
+### Business rules
+- ApproverFilter client component provides instant course + role filtering (no page reload)
+- Approver dropdown excludes already-assigned users
+
+---
+
+## Approval Inbox `/approvals`
+
+**File:** `src/app/approvals/page.tsx`
+**Who can access:** Any user with pending approval assignments (teachers, school admins).
+**Purpose:** View and respond to pending gate approvals.
+
+### What the user sees
+
+1. **Pending items** — exam title, sitting title, gate type badge, submitter name, "View exam →" link, note textarea, Approve/Reject buttons
+2. **Recent responses** — table of past approvals/rejections with date and note
+
+### Actions
+
+#### Respond (`respondAction`)
+- Validates user is assigned approver. Upserts response (APPROVED/REJECTED with optional note).
+
+### Business rules
+- "View exam →" links to `/exam-preview` for QUESTIONS/RESULTS gates, `/exam-grade` for GRADING gate
+- Pending items query fetches first_submitted_attempt for grading link
+
+---
+
+## Exam Builder `/exam-builder`
+
+**File:** `src/app/exam-builder/page.tsx`
+**Who can access:** TEACHER (owns course) or SCHOOL_ADMIN.
+**Purpose:** Build and manage an exam — settings, questions, publish, access control, results, approvals. Has 7 tabs.
+
+### Tab 1 — Settings
+
+Edit form with 16 fields: title, description, duration, max attempts, score display, pass mark %, shuffle questions, shuffle options, show marks during, allow review, navigation mode (FREE/SEQUENTIAL), results release policy (MANUAL/IMMEDIATE/AFTER_CLOSE), opens at, closes at, late submission policy, exam password. Locked when PUBLISHED or CLOSED.
+
+### Tab 2 — Questions
+
+- Question list with type badge, marks, partial marking badge, options preview
+- Reorder (↑/↓), Edit, Delete buttons per question
+- **Add New Question form** (QuestionForm client component): supports MCQ, Multiple Select, True/False, Short Answer, Essay. Dynamic option adding/removing, per-option feedback, model answer, general feedback, partial marking toggle.
+- **Question Bank link** — secondary option to add from bank
+- Auto-saves to question bank (PERSONAL) on create/edit
+
+### Tab 3 — Preview
+
+Link to `/exam-preview?exam_id=X` (separate page, not inline).
+
+### Tab 4 — Publish
+
+- DRAFT → Publish button (requires ≥1 question, sets published_by, auto-releases results if policy=IMMEDIATE)
+- PUBLISHED → Close button (auto-releases results if policy=AFTER_CLOSE)
+- CLOSED → informational message
+
+### Tab 5 — Access
+
+- Current access list with Remove button per student
+- Add by class (bulk — all students in class)
+- Add by course enrollment (bulk — all enrolled students)
+- Add individual student (validates STUDENT role)
+- All INSERTs include `added_by` for audit trail
+
+### Tab 6 — Results
+
+- Submitted attempts table: student name, attempt number, grading status, score, grade, date
+- Release Results button (sets `results_published_at`)
+- Link to `/exam-grade` per attempt
+
+### Tab 7 — Approvals (conditional)
+
+Only shown if exam has approval gates configured. Shows per-gate status with approver responses and "Submit for Approval" button.
+
+---
+
+## Exam Preview `/exam-preview`
+
+**File:** `src/app/exam-preview/page.tsx`
+**Who can access:** TEACHER, SCHOOL_ADMIN, system admin, or assigned approver.
+**Purpose:** Read-only preview of exam questions. Also serves as the approver review interface.
+
+### Two modes
+
+**Preview Mode** (default): Shows all questions with correct answers highlighted in green, model answers, feedback. For teacher verification.
+
+**Approver Review Mode** (auto-detected): When user has a PENDING gate response, shows questions with per-question comment textareas, other approvers' comments, and Approve/Reject form at bottom. Comments saved to `sitting_approval_comments`.
+
+### Business rules
+- Teachers/admins see all approval comments in read-only mode
+- Approvers can only see comments from their gate
+- Access check allows assigned approvers (not just teachers/admins)
+
+---
+
+## Exam Bank Picker `/exam-bank-picker`
+
+**File:** `src/app/exam-bank-picker/page.tsx`
+**Who can access:** TEACHER or SCHOOL_ADMIN.
+**Purpose:** Browse the question bank and add questions to an exam.
+
+### What the user sees
+
+1. **Filter bar** — text search, type filter (MCQ/True-False/etc.), visibility filter (All/My questions/School questions)
+2. **Question cards** — type badge, marks, Personal/School label, creator name (for shared questions), "Already added" badge, Add to Exam button
+3. **Question count** — "X questions found" below filters
+
+### Actions
+
+#### Add Bank Question (`addBankQuestionToExamAction`)
+- Copies question + options from bank to exam. Sets `bank_question_id` link. Puts at end of sort order.
+
+### Business rules
+- Teachers see own PERSONAL questions + all SCHOOL-visible questions
+- WHERE clause: `(created_by=? OR visibility='SCHOOL')`
+- Questions already in exam show "Already added" badge but can still be added again
+
+---
+
+## Question Bank `/question-bank`
+
+**File:** `src/app/question-bank/page.tsx`
+**Who can access:** TEACHER or SCHOOL_ADMIN.
+**Purpose:** Manage personal/shared question library. Create, view, delete bank questions.
+
+### Actions
+
+#### Create Question (`createBankQuestionAction`)
+- Creates bank question with type, text, marks, model answer, visibility (PERSONAL or SCHOOL).
+
+#### Delete Question (`deleteBankQuestionAction`)
+- Deletes bank question (tenant-scoped).
+
+### Business rules
+- Visibility: PERSONAL (only creator sees it) or SCHOOL (all teachers in school)
+- Questions created inline in exam builder auto-save here as PERSONAL
+- No edit action yet — only create and delete
+
+---
+
 *More pages will be added to this document as they are reviewed.*

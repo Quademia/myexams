@@ -236,15 +236,27 @@ Before adding new capabilities, all existing logic from the old build must work 
 - Join codes — 7 fixes (dates, validation, history, empty states)
 - People — self-removal protection, email check auth, tooltip
 - Classes — enrol-class-in-course now functional after schema upgrade
+- Sittings & Approvals — all 9 gaps fixed (paper creation, teacher dropdown, gate disable, approval comments, question preview, exam grade link, course_teachers assignment, validations)
+- Approver filter — client-side course + role filtering on gate settings page
+- Exam builder — 7 critical fixes across all tabs:
+  - Settings: 5 missing columns restored, time_limit_minutes bug fixed, all settings now save correctly
+  - Questions: add/edit question form built with QuestionForm client component (MCQ options, per-option feedback, partial marking, all 5 question types)
+  - Access: added_by NOT NULL fix, class/student validation, closed exam protection
+  - Publish: published_by, question count check, results_release_policy (IMMEDIATE/AFTER_CLOSE)
+  - Close: results_release_policy auto-release on AFTER_CLOSE
+- Exam preview — time_limit_minutes crash fixed, approver mode with comments working
+- Bank picker — fixed crash (wrong column name), added visibility filter, creator names, Personal/School labels, WHERE clause matches old code
+- Question bank — auto-save to bank on inline question create/edit, PRIVATE→PERSONAL visibility fix
 
 **Still TODO:**
-- Fix exam-preview and exam-builder access for all role types
+- Exam preview student-view mode (show exam as student would see it, no answers highlighted)
 - Fix exam-grade page
 - Build the `/attempt-take` interactive exam-taking interface
 - Verify teacher and student flows end-to-end
 - Test full flow: login → dashboard → create exam → publish → student takes exam → grading → results
 - Remove `functions/` folder once migration is fully verified
 - Confirm dialogs on destructive actions (deferred to Phase 2 — needs client-side ConfirmButton)
+- Sequential question navigation in preview (deferred to Phase 2 — needs client-side state)
 
 ### Phase 2 — Unlock the Power of the New Stack
 
