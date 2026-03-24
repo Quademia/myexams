@@ -186,7 +186,11 @@ async function rejectRequestAction(formData: FormData) {
 export default async function SchoolJoinCodesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new_code?: string; error?: string }>;
+  searchParams: Promise<{
+    new_code?: string; error?: string;
+    dup_who?: string; dup_action?: string; dup_course_id?: string;
+    dup_auto?: string; dup_max?: string;
+  }>;
 }) {
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
@@ -196,16 +200,23 @@ export default async function SchoolJoinCodesPage({
   const newCode = params.new_code;
   const error = params.error;
 
+  // Pre-fill values from Duplicate button.
+  const dupWho = params.dup_who || "";
+  const dupAction = params.dup_action || "";
+  const dupCourseId = params.dup_course_id || "";
+  const dupAuto = params.dup_auto || "0";
+  const dupMax = params.dup_max || "300";
+
   const { all } = getDb();
   const tid = active.tenant_id;
 
   // Fetch data in parallel.
   const [codes, courses, pending, history] = await Promise.all([
     all<{
-      id: string; scope: string; role: string; course_title: string | null;
+      id: string; scope: string; role: string; course_id: string | null; course_title: string | null;
       auto_approve: number; expires_at: string; max_uses: number; uses_approved: number; revoked: number;
     }>(
-      `SELECT jc.id, jc.scope, jc.role, c.title AS course_title,
+      `SELECT jc.id, jc.scope, jc.role, jc.course_id, c.title AS course_title,
          jc.auto_approve, jc.expires_at, jc.max_uses, jc.uses_approved, jc.revoked
        FROM join_codes jc LEFT JOIN courses c ON c.id=jc.course_id
        WHERE jc.tenant_id=? ORDER BY jc.created_at DESC`, [tid]
@@ -292,12 +303,21 @@ export default async function SchoolJoinCodesPage({
                       </span>
                     </td>
                     <td className="py-3 px-2">
-                      <form action={revokeCodeAction}>
-                        <input type="hidden" name="code_id" value={c.id} />
-                        <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                          Revoke
-                        </button>
-                      </form>
+                      <div className="flex gap-1">
+                        {/* Duplicate — links back to this page with pre-filled create form */}
+                        <a
+                          href={`/school-join-codes?dup_who=${c.role === "STUDENT" ? "student" : "teacher"}&dup_action=${c.scope === "TENANT_ROLE" ? "school" : "course"}&dup_course_id=${c.course_id || ""}&dup_auto=${c.auto_approve}&dup_max=${c.max_uses}#create`}
+                          className="px-3 py-1 bg-teal-50 text-teal-700 text-xs font-semibold rounded-lg hover:bg-teal-100 no-underline"
+                        >
+                          Duplicate
+                        </a>
+                        <form action={revokeCodeAction}>
+                          <input type="hidden" name="code_id" value={c.id} />
+                          <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
+                            Revoke
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -308,22 +328,26 @@ export default async function SchoolJoinCodesPage({
       </Card>
 
       {/* Section 2: Create Code — plain English questions */}
-      <Card title="Create Code">
+      <div id="create">
+      <Card title={dupWho ? "Duplicate Code" : "Create Code"}>
+        {dupWho && (
+          <p className="text-xs text-teal-700 mb-3">Pre-filled from an existing code. Adjust if needed, then click Create.</p>
+        )}
         <form action={createCodeAction}>
           <label className="block text-sm mb-1 font-medium">Who is this code for?</label>
-          <select name="who" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
+          <select name="who" required defaultValue={dupWho || "student"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
             <option value="student">Student</option>
             <option value="teacher">Teacher</option>
           </select>
 
           <label className="block text-sm mb-1 font-medium">What should happen when they join?</label>
-          <select name="action" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
+          <select name="action" required defaultValue={dupAction || "school"} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
             <option value="school">Join the school only</option>
             <option value="course">Join the school AND enrol in a specific course</option>
           </select>
 
           <label className="block text-sm mb-1">Course <span className="text-gray-400">(only needed if enrolling in a course)</span></label>
-          <select name="course_id" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
+          <select name="course_id" defaultValue={dupCourseId} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
             <option value="">— Select course —</option>
             {courses.map((c) => (
               <option key={c.id} value={c.id}>{c.title}</option>
@@ -333,7 +357,7 @@ export default async function SchoolJoinCodesPage({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="block text-sm mb-1">Auto-approve</label>
-              <select name="auto_approve" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <select name="auto_approve" defaultValue={dupAuto} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                 <option value="0">No (admin approval required)</option>
                 <option value="1">Yes (instant)</option>
               </select>
@@ -345,13 +369,14 @@ export default async function SchoolJoinCodesPage({
           </div>
 
           <label className="block text-sm mb-1">Max uses</label>
-          <input name="max_uses" type="number" min="1" defaultValue="300" required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
+          <input name="max_uses" type="number" min="1" defaultValue={dupMax} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3" />
 
           <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
             Create code
           </button>
         </form>
       </Card>
+      </div>
 
       {/* Section 3: Pending Requests */}
       <Card title={`Pending Requests (${pending.length})`}>
