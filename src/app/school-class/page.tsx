@@ -85,9 +85,16 @@ async function removeStudentAction(formData: FormData) {
   const active = pickActiveMembership(auth);
   if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
 
-  const classId = formData.get("class_id") as string;
-  const userId = formData.get("user_id") as string;
-  const { run } = getDb();
+  const classId = (formData.get("class_id") as string || "").trim();
+  const userId = (formData.get("user_id") as string || "").trim();
+  if (!classId || !userId) redirect("/school-classes");
+
+  const { first, run } = getDb();
+
+  // Verify class belongs to this tenant (matches old code).
+  const classCheck = await first("SELECT id FROM classes WHERE id=? AND tenant_id=?", [classId, active.tenant_id]);
+  if (!classCheck) redirect("/school-classes");
+
   await run("DELETE FROM class_students WHERE class_id=? AND user_id=?", [classId, userId]);
   redirect(`/school-class?class_id=${classId}&tab=students`);
 }
@@ -132,8 +139,10 @@ async function unenrolCourseAction(formData: FormData) {
   const active = pickActiveMembership(auth);
   if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
 
-  const classId = formData.get("class_id") as string;
-  const courseId = formData.get("course_id") as string;
+  const classId = (formData.get("class_id") as string || "").trim();
+  const courseId = (formData.get("course_id") as string || "").trim();
+  if (!classId || !courseId) redirect("/school-classes");
+
   const { all, first, run } = getDb();
 
   // #7 — Validate class belongs to this tenant (matches old code).
@@ -183,7 +192,8 @@ export default async function SchoolClassPage({
     { label: "Courses", value: "courses", href: `${base}&tab=courses` },
   ];
 
-  const subtitle = [cls.year_group, cls.academic_year].filter(Boolean).join(" · ") || "Class Details";
+  const subtitleParts = [cls.year_group, cls.academic_year, cls.status].filter(Boolean);
+  const subtitle = subtitleParts.length > 0 ? subtitleParts.join(" · ") : "Class Details";
 
   return (
     <SchoolLayout auth={auth} active={active} currentPath="/school-classes">
@@ -278,8 +288,8 @@ async function StudentsTab({ classId, tenantId }: { classId: string; tenantId: s
         )}
       </Card>
 
-      {available.length > 0 && (
-        <Card title="Add Student">
+      <Card title="Add Student">
+        {available.length > 0 ? (
           <form action={addStudentAction} className="flex gap-2 items-end">
             <input type="hidden" name="class_id" value={classId} />
             <select name="user_id" required className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
@@ -291,8 +301,10 @@ async function StudentsTab({ classId, tenantId }: { classId: string; tenantId: s
               Add to class
             </button>
           </form>
-        </Card>
-      )}
+        ) : (
+          <p className="text-sm text-gray-400">All students in the school are already in this class.</p>
+        )}
+      </Card>
     </>
   );
 }
@@ -354,24 +366,28 @@ async function CoursesTab({ classId, tenantId }: { classId: string; tenantId: st
         )}
       </Card>
 
-      {allCourses.length > 0 && (
-        <Card title="Enrol Class in Course">
-          <p className="text-xs text-gray-500 mb-2">
-            This will enrol all students currently in the class into the course. Students already enrolled will be skipped.
-          </p>
-          <form action={enrolCourseAction} className="flex gap-2 items-end">
-            <input type="hidden" name="class_id" value={classId} />
-            <select name="course_id" required className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
-              {allCourses.map((c) => (
-                <option key={c.id} value={c.id}>{c.title}</option>
-              ))}
-            </select>
-            <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-              Enrol all students
-            </button>
-          </form>
-        </Card>
-      )}
+      <Card title="Enrol Class in Course">
+        {allCourses.length > 0 ? (
+          <>
+            <p className="text-xs text-gray-500 mb-2">
+              This will enrol all students currently in the class into the course. Students already enrolled will be skipped.
+            </p>
+            <form action={enrolCourseAction} className="flex gap-2 items-end">
+              <input type="hidden" name="class_id" value={classId} />
+              <select name="course_id" required className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                {allCourses.map((c) => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+              <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+                Enrol all students
+              </button>
+            </form>
+          </>
+        ) : (
+          <p className="text-sm text-gray-400">No active courses found.</p>
+        )}
+      </Card>
     </>
   );
 }
