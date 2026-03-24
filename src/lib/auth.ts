@@ -226,15 +226,21 @@ export function describeCode(scope: string, role: string, courseTitle?: string |
   if (scope === "TENANT_ROLE" && role === "TEACHER") return "Teachers → join school";
   if (scope === "COURSE_ENROLL" && courseTitle) return `Students → enrol in ${courseTitle}`;
   if (scope === "COURSE_TEACHER" && courseTitle) return `Teachers → assign to ${courseTitle}`;
-  return `${scope} (${role})`;
+  // Fallback: use human-readable labels instead of raw DB values.
+  const scopeLabel = scope === "COURSE_ENROLL" ? "Course enrol"
+    : scope === "COURSE_TEACHER" ? "Course teacher"
+    : scope === "TENANT_ROLE" ? "School role"
+    : scope;
+  return `${scopeLabel} (${roleLabel(role)})`;
 }
 
-// Formats an ISO date string for display.
+// Formats an ISO date string for display (includes time, matching old code).
 export function fmtISO(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "";
   try {
     return new Date(iso).toLocaleDateString("en-GB", {
       day: "numeric", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
     });
   } catch {
     return iso;

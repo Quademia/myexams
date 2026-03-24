@@ -7,6 +7,7 @@
 // focused tabs for each concern.
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { requireAuth, pickActiveMembership, makeJoinCodePlain, joinCodeHash, isIsoInPast, describeCode, fmtISO } from "@/lib/auth";
 import { getEnv } from "@/lib/env";
 import { getDb } from "@/lib/db";
@@ -234,7 +235,15 @@ async function createCodeAction(formData: FormData) {
   );
 
   // Redirect back with the plain code shown as a query param (shown only once).
-  redirect(`/school-course?course_id=${courseId}&tab=join-codes&new_code=${encodeURIComponent(codePlain)}`);
+  const cookieStore = await cookies();
+  cookieStore.set("qa_new_code", codePlain, {
+    path: "/school-course",
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 60,
+  });
+  redirect(`/school-course?course_id=${courseId}&tab=join-codes`);
 }
 
 async function revokeCodeAction(formData: FormData) {
@@ -258,7 +267,7 @@ async function revokeCodeAction(formData: FormData) {
 export default async function SchoolCoursePage({
   searchParams,
 }: {
-  searchParams: Promise<{ course_id?: string; tab?: string; new_code?: string; dup_who?: string; dup_auto?: string; dup_max?: string }>;
+  searchParams: Promise<{ course_id?: string; tab?: string; dup_who?: string; dup_auto?: string; dup_max?: string }>;
 }) {
   const auth = await requireAuth();
   if (auth.user!.is_system_admin === 1) redirect("/sys");
@@ -268,7 +277,11 @@ export default async function SchoolCoursePage({
   const params = await searchParams;
   const courseId = params.course_id;
   const tab = params.tab || "details";
-  const newCode = params.new_code;
+  const cookieStore = await cookies();
+  const newCode = cookieStore.get("qa_new_code")?.value || null;
+  if (newCode) {
+    cookieStore.delete("qa_new_code");
+  }
 
   if (!courseId) redirect("/school-courses");
 

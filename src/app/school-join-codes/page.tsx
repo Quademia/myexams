@@ -4,6 +4,7 @@
 // instead of technical scope names.
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { requireAuth, pickActiveMembership, roleLabel, makeJoinCodePlain, joinCodeHash, isIsoInPast, describeCode, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
@@ -65,7 +66,17 @@ async function createCodeAction(formData: FormData) {
     [crypto.randomUUID(), active.tenant_id, scope!, role!, course_id, codeHash_, autoApprove, expiresAt, maxUses, auth.user!.id, now, now]
   );
 
-  redirect(`/school-join-codes?new_code=${encodeURIComponent(codePlain)}`);
+  // Store the plaintext code in a short-lived cookie instead of the URL
+  // so it doesn't appear in browser history (matches old code's approach).
+  const cookieStore = await cookies();
+  cookieStore.set("qa_new_code", codePlain, {
+    path: "/school-join-codes",
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 60, // expires in 60 seconds — only needs to survive the redirect
+  });
+  redirect("/school-join-codes");
 }
 
 async function revokeCodeAction(formData: FormData) {
@@ -111,10 +122,11 @@ async function approveRequestAction(formData: FormData) {
     [jr.join_code_id, active.tenant_id]
   );
 
-  // Validate code is still usable.
-  if (!jc || jc.revoked === 1 || isIsoInPast(jc.expires_at) || jc.uses_approved >= jc.max_uses) {
-    redirect("/school-join-codes?error=code_invalid");
-  }
+  // Validate code is still usable — give specific reasons (matches old code).
+  if (!jc) redirect("/school-join-codes?error=code_invalid");
+  if (jc.revoked === 1) redirect("/school-join-codes?error=code_revoked");
+  if (isIsoInPast(jc.expires_at)) redirect("/school-join-codes?error=code_expired");
+  if (jc.uses_approved >= jc.max_uses) redirect("/school-join-codes?error=code_maxed");
 
   // #3 — Reserve a use and CHECK that the UPDATE actually changed a row.
   // This prevents race conditions where two admins approve at the same time
@@ -256,7 +268,7 @@ export default async function SchoolJoinCodesPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    new_code?: string; error?: string;
+    error?: string;
     dup_who?: string; dup_action?: string; dup_course_id?: string;
     dup_auto?: string; dup_max?: string;
   }>;
@@ -267,8 +279,15 @@ export default async function SchoolJoinCodesPage({
   if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
 
   const params = await searchParams;
-  const newCode = params.new_code;
   const error = params.error;
+
+  // Read the newly created code from a cookie (not the URL, for security).
+  // The cookie is set by createCodeAction and cleared after reading.
+  const cookieStore = await cookies();
+  const newCode = cookieStore.get("qa_new_code")?.value || null;
+  if (newCode) {
+    cookieStore.delete("qa_new_code");
+  }
 
   // Pre-fill values from Duplicate button.
   const dupWho = params.dup_who || "";
@@ -338,7 +357,22 @@ export default async function SchoolJoinCodesPage({
       )}
       {error === "code_invalid" && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
-          Cannot approve: the join code is no longer valid (expired, revoked, or maxed out).
+          Cannot approve: the join code was not found.
+        </div>
+      )}
+      {error === "code_revoked" && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
+          Cannot approve: this join code has been revoked.
+        </div>
+      )}
+      {error === "code_expired" && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
+          Cannot approve: this join code has expired.
+        </div>
+      )}
+      {error === "code_maxed" && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-3">
+          Cannot approve: this join code has reached its maximum uses.
         </div>
       )}
       {error === "course_invalid" && (
@@ -433,10 +467,16 @@ export default async function SchoolJoinCodesPage({
 
           <label className="block text-sm mb-1">Course <span className="text-gray-400">(only needed if enrolling in a course)</span></label>
           <select name="course_id" defaultValue={dupCourseId} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3">
-            <option value="">— Select course —</option>
-            {courses.map((c) => (
-              <option key={c.id} value={c.id}>{c.title}</option>
-            ))}
+            {courses.length === 0 ? (
+              <option value="">Create a course first</option>
+            ) : (
+              <>
+                <option value="">— Select course —</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </>
+            )}
           </select>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
@@ -545,7 +585,7 @@ export default async function SchoolJoinCodesPage({
                           {h.status}
                         </span>
                         <div className="text-xs text-gray-400 mt-0.5">
-                          {fmtISO(h.reviewed_at)}
+                          Reviewed: {fmtISO(h.reviewed_at)}
                         </div>
                       </td>
                     </tr>
