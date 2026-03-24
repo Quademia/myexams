@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, pickActiveMembership, roleLabel } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/Card";
+import { ApproverFilter } from "@/components/ApproverFilter";
 
 // ============================================================
 // Server Actions
@@ -176,6 +177,25 @@ export default async function SittingGateSettingsPage({
     [active.tenant_id]
   );
 
+  // Courses + course→teacher links for client-side filtering.
+  const courses = await all<{ id: string; title: string }>(
+    "SELECT id, title FROM courses WHERE tenant_id=? AND status='ACTIVE' ORDER BY title ASC",
+    [active.tenant_id]
+  );
+  const courseTeacherLinks = await all<{ course_id: string; user_id: string }>(
+    `SELECT ct.course_id, ct.user_id FROM course_teachers ct
+     JOIN courses c ON c.id = ct.course_id AND c.tenant_id=? AND c.status='ACTIVE'`,
+    [active.tenant_id]
+  );
+  // Build course→teacher map for the client component.
+  const courseTeacherMap: Record<string, string[]> = {};
+  for (const link of courseTeacherLinks) {
+    if (!courseTeacherMap[link.course_id]) courseTeacherMap[link.course_id] = [];
+    courseTeacherMap[link.course_id].push(link.user_id);
+  }
+  // Distinct roles for filter.
+  const distinctRoles = [...new Set(allMembers.map(m => m.role))].sort();
+
   return (
     <main className="max-w-4xl mx-auto p-4">
       {/* Header */}
@@ -250,24 +270,17 @@ export default async function SittingGateSettingsPage({
               <p className="text-sm text-gray-400 italic mb-3">No approvers assigned — gate inactive</p>
             )}
 
-            {/* Add approver form */}
-            <div className="border-t border-gray-100 pt-3">
-              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-2">Add approver</div>
-              <form action={addApproverAction} className="flex gap-2 items-end flex-wrap">
-                <input type="hidden" name="sitting_id" value={sittingId} />
-                <input type="hidden" name="exam_id" value={examId} />
-                <input type="hidden" name="gate_type" value={def.type} />
-                <select name="user_id" required className="flex-1 min-w-[180px] px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                  <option value="">— select member —</option>
-                  {availableMembers.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name} ({roleLabel(m.role)})</option>
-                  ))}
-                </select>
-                <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                  + Add
-                </button>
-              </form>
-            </div>
+            {/* Add approver form with course + role filtering */}
+            <ApproverFilter
+              sittingId={sittingId!}
+              examId={examId!}
+              gateType={def.type}
+              members={availableMembers}
+              courses={courses}
+              courseTeacherMap={courseTeacherMap}
+              distinctRoles={distinctRoles}
+              addAction={addApproverAction}
+            />
           </Card>
         );
       })}
