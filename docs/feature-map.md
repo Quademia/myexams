@@ -531,9 +531,15 @@ Link to `/exam-preview?exam_id=X` (separate page, not inline).
 
 ### Tab 6 — Results
 
-- Submitted attempts table: student name, attempt number, grading status, score, grade, date
+- Full submission table — one row per attempt
+- Columns: student name, custom field answers, attempt number, grading status, score, percentage, grade, pass/fail, time taken, submitted at
+- Summary block: total submissions, in progress, needs grading, average score
+- Filters: grading status, pass/fail (client-side, via ResultsTable client component)
+- Sortable columns: name, score, %, time, submitted (client-side)
+- Export CSV button → GET /exam-results-csv?exam_id=X
+- Grade button → /exam-grade?attempt_id=X&exam_id=Y for AUTO_GRADED attempts
+- View button → /exam-grade?attempt_id=X&exam_id=Y&view=1 for FULLY_GRADED attempts
 - Release Results button (sets `results_published_at`)
-- Link to `/exam-grade` per attempt
 
 ### Tab 7 — Approvals (conditional)
 
@@ -588,20 +594,78 @@ Only shown if exam has approval gates configured. Shows per-gate status with app
 
 **File:** `src/app/question-bank/page.tsx`
 **Who can access:** TEACHER or SCHOOL_ADMIN.
-**Purpose:** Manage personal/shared question library. Create, view, delete bank questions.
+**Purpose:** Manage personal/shared question library. Create, edit, delete, and share bank questions.
+
+### What the user sees
+
+1. **Filter bar** — type filter (All/MCQ/True-False/etc.), visibility filter (All/My questions/School questions)
+2. **Question cards** — type badge, marks, PERSONAL/SCHOOL label, owner name, question text preview, options preview for choice types
+3. **Owner-only actions** — Edit, Delete, Share toggle (PERSONAL↔SCHOOL) buttons only shown for questions you created
+4. **Read-only label** — "Shared by [name]" shown for other teachers' SCHOOL-visible questions
 
 ### Actions
 
 #### Create Question (`createBankQuestionAction`)
-- Creates bank question with type, text, marks, model answer, visibility (PERSONAL or SCHOOL).
+- Creates bank question with type, text, marks, model answer, visibility (PERSONAL or SCHOOL). Supports all 5 question types with options.
+
+#### Edit Question (`editBankQuestionAction`)
+- Updates existing bank question. Owner-only. Deletes and re-inserts options.
 
 #### Delete Question (`deleteBankQuestionAction`)
-- Deletes bank question (tenant-scoped).
+- Deletes bank question + options. Owner-only (tenant-scoped).
+
+#### Toggle Visibility (`toggleVisibilityAction`)
+- Toggles between PERSONAL and SCHOOL visibility. Owner-only.
 
 ### Business rules
 - Visibility: PERSONAL (only creator sees it) or SCHOOL (all teachers in school)
 - Questions created inline in exam builder auto-save here as PERSONAL
-- No edit action yet — only create and delete
+- Full CRUD: create, edit, delete (owner-only actions)
+- Share toggle allows teachers to make questions available school-wide
+
+---
+
+## ✏️ Grading Screen `/exam-grade`
+
+**File:** `src/app/exam-grade/page.tsx`
+**Who can access:** TEACHER (owns course) or SCHOOL_ADMIN.
+**Purpose:** View and grade student exam submissions. Three modes: grade, view, approver review.
+
+### What the user sees
+
+- Shows ALL questions ordered by sort_order (original teacher order)
+- MCQ/True-False/Multiple Select — read only, shows student answer with green/red/amber highlighting
+- Short Answer/Essay — student answer, model answer, score input, teacher note field
+- Desktop: two-column layout — questions left, sticky sidebar right
+- Sidebar (grade mode): lists ungraded manual questions, score summary, Save Grades button
+- Sidebar (view mode): score summary card with raw score, percentage, grade, pass/fail
+- Mobile: floating button opens drawer showing ungraded questions (MobileGradingDrawer client component)
+- view=1 mode — fully read-only, used for FULLY_GRADED attempts
+- Approver mode — auto-detected when viewer is GRADING gate approver with PENDING response. Shows approver banner, per-question comment boxes, Approve/Reject form at bottom.
+- Gate decision banner in view mode — shows approved/rejected status with approver name and note
+- Context-aware back link — approvers → /approvals, teachers/admins → /exam-builder results tab
+- On save: full recalcAttempt logic including grade band calculation, redirects to results tab
+
+### Actions
+
+#### Grade Submission (`gradeAction`)
+- Reads score and note per manual question from form
+- Clamps score to [0, question.marks]
+- Updates exam_answers with score_awarded, teacher_note, graded_by, graded_at
+- Runs full recalcAttempt: recalculates score_raw, score_total, score_pct, grade (from grade_bands_json), grading_status
+- Redirects to /exam-builder results tab
+
+#### Approver Review (`gradingReviewRespondAction`)
+- Saves per-question comments (upsert into sitting_approval_comments)
+- Updates sitting_approval_responses status to APPROVED or REJECTED with optional note
+- Redirects to /approvals
+
+### Business rules
+- Grade mode only available for AUTO_GRADED attempts (not view=1)
+- Approver mode auto-detected server-side from sitting_approval_gates + responses
+- answer_json parsed correctly: single ID for MCQ/TRUE_FALSE, array for MULTIPLE_SELECT, text for SHORT_ANSWER/ESSAY
+- Grade bands read from attempt's snapshotted grade_bands_json (not exam table)
+- grading_status set to FULLY_GRADED only when ALL manual questions have scores
 
 ---
 

@@ -101,6 +101,7 @@ src/
     exam-create/route.ts       ← POST /exam-create
     exam-preview/page.tsx      ← /exam-preview
     exam-grade/page.tsx        ← /exam-grade
+    exam-results-csv/route.ts  ← GET /exam-results-csv (CSV export)
     exam-bank-picker/page.tsx  ← /exam-bank-picker
     question-bank/page.tsx     ← /question-bank
     attempt-start/page.tsx     ← /attempt-start
@@ -113,6 +114,15 @@ src/
     DataTable.tsx              ← Generic data table
     PageHeader.tsx             ← Title + back link
     SchoolLayout.tsx           ← Header + nav for all /school-* pages
+    ResultsTable.tsx           ← Client component: filterable/sortable results table
+    MobileGradingDrawer.tsx    ← Client component: floating button + drawer for mobile grading
+    QuestionFormFields.tsx     ← Client component: question form with dynamic options
+    GradeBandsEditor.tsx       ← Client component: grade band editor
+    CustomFieldsEditor.tsx     ← Client component: custom field editor
+    ApproverFilter.tsx         ← Client component: course + role filter for approver selection
+    BankQuestionForm.tsx       ← Client component: question bank create/edit form
+    BankQuestionFormFields.tsx ← Client component: question bank form fields
+    PreviewToggle.tsx          ← Client component: preview mode toggle
 
   lib/                         ← Shared backend logic
     db.ts                      ← D1 database helpers (first, all, run)
@@ -139,7 +149,7 @@ CLAUDE.md                      ← Instructions for Claude
 
 ---
 
-## All Routes (33 total)
+## All Routes (34 total)
 
 ### Auth & Navigation (7)
 | Route | Description |
@@ -177,15 +187,16 @@ CLAUDE.md                      ← Instructions for Claude
 | `/sitting-gate-settings` | Assign approvers to QUESTIONS/GRADING/RESULTS gates |
 | `/sitting-results` | Student's sitting results view |
 
-### Exams (6)
+### Exams (7)
 | Route | Description |
 |---|---|
 | `/exam-builder` | 7 tabs: Settings, Questions, Preview, Publish, Access, Results, Approvals |
 | `/exam-create` | POST handler — creates exam, redirects to builder |
 | `/exam-preview` | Read-only exam preview for teachers |
-| `/exam-grade` | Grading interface — score essays/short answers |
+| `/exam-grade` | Grading interface — three modes: grade (score manual questions), view (read-only), approver review (GRADING gate). Two-column desktop layout, mobile drawer. |
+| `/exam-results-csv` | GET route — CSV export of exam results with correct columns and Content-Disposition header |
 | `/exam-bank-picker` | Pick questions from bank to add to exam |
-| `/question-bank` | Question bank management (CRUD) |
+| `/question-bank` | Question bank management — full CRUD, share toggle (PERSONAL↔SCHOOL), type/visibility filters |
 
 ### Student (4)
 | Route | Description |
@@ -248,9 +259,15 @@ Before adding new capabilities, all existing logic from the old build must work 
 - Bank picker — fixed crash (wrong column name), added visibility filter, creator names, Personal/School labels, WHERE clause matches old code
 - Question bank — auto-save to bank on inline question create/edit, PRIVATE→PERSONAL visibility fix
 
+**✅ Verified & Fixed (2026-03-25):**
+- Questions tab — full rebuild from scratch with correct server action architecture (no server actions as props). QuestionFormFields client component. All 5 question types, add/edit/delete/reorder, partial marking, model answer, per-option feedback, bank auto-save, From Bank badge, locked state for published exams.
+- Question bank page — full rebuild. Create, edit, delete, share toggle (PERSONAL↔SCHOOL), type and visibility filters, owner-only actions, read-only label for non-owners.
+- Question Bank link — added to teacher dashboard header
+- Results tab — full rebuild with summary cards (Total Submitted, In Progress, Needs Grading, Avg Score), client-side filtering and sorting, all columns (custom fields, attempt #, grade, pass/fail, time taken), correct Grade/View button logic, CSV export link
+- CSV export route — new GET handler at /exam-results-csv with correct columns, CSV escaping, Content-Disposition header
+- Grading page — full rebuild: two-column desktop layout, sidebar showing ungraded questions, view=1 read-only mode, approver mode (GRADING gate), grade band recalculation (grade field now correctly calculated), context-aware back link, mobile drawer, gate decision banner
+
 **Still TODO:**
-- Exam preview student-view mode (show exam as student would see it, no answers highlighted)
-- Fix exam-grade page
 - Build the `/attempt-take` interactive exam-taking interface
 - Verify teacher and student flows end-to-end
 - Test full flow: login → dashboard → create exam → publish → student takes exam → grading → results
