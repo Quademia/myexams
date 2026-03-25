@@ -254,59 +254,80 @@ export default async function StudentPage() {
 
                   {/* Right — action button(s) */}
                   <div className="flex gap-2 flex-wrap items-center">
-                    {inProgress ? (
-                      /* 1. Resume an in-progress attempt */
-                      <a
-                        href={`/attempt-take?attempt_id=${inProgress.id}`}
-                        className="px-4 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 no-underline"
-                      >
-                        Resume Exam →
-                      </a>
-                    ) : attemptsRemaining > 0 ? (
-                      /* 2. Start a new attempt */
-                      <a
-                        href={`/attempt-start?exam_id=${exam.exam_id}`}
-                        className="px-4 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 no-underline"
-                      >
-                        Start Exam →
-                      </a>
-                    ) : submitted.length === 1 ? (
-                      /* 3. Single submitted attempt — one button */
-                      resultsReleased ? (
-                        <a
-                          href={`/attempt-results?attempt_id=${submitted[0].id}`}
-                          className="px-4 py-2 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 no-underline"
-                        >
-                          View Results
-                        </a>
-                      ) : (
-                        <span className="px-4 py-2 bg-gray-200 text-gray-500 text-xs font-semibold rounded-lg cursor-not-allowed">
-                          Results Pending
-                        </span>
-                      )
-                    ) : submitted.length > 1 ? (
-                      /* 4. Multiple submitted attempts — one button per attempt */
-                      <>
-                        {submitted.map((att) =>
-                          resultsReleased ? (
+                    {(() => {
+                      /* Helper — renders View Results buttons for submitted attempts */
+                      const resultsButtons = () => {
+                        if (submitted.length === 1) {
+                          return resultsReleased ? (
                             <a
-                              key={att.id}
-                              href={`/attempt-results?attempt_id=${att.id}`}
-                              className="px-3 py-1.5 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 no-underline"
+                              href={`/attempt-results?attempt_id=${submitted[0].id}`}
+                              className="px-4 py-2 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 no-underline"
                             >
-                              Attempt {att.attempt_no}
+                              View Results
                             </a>
                           ) : (
-                            <span
-                              key={att.id}
-                              className="px-3 py-1.5 bg-gray-200 text-gray-500 text-xs font-semibold rounded-lg cursor-not-allowed"
-                            >
-                              Attempt {att.attempt_no}
+                            <span className="px-4 py-2 bg-gray-200 text-gray-500 text-xs font-semibold rounded-lg cursor-not-allowed">
+                              Results Pending
                             </span>
-                          )
-                        )}
-                      </>
-                    ) : null}
+                          );
+                        }
+                        if (submitted.length > 1) {
+                          return (
+                            <>
+                              {submitted.map((att) =>
+                                resultsReleased ? (
+                                  <a
+                                    key={att.id}
+                                    href={`/attempt-results?attempt_id=${att.id}`}
+                                    className="px-3 py-1.5 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 no-underline"
+                                  >
+                                    Attempt {att.attempt_no}
+                                  </a>
+                                ) : (
+                                  <span
+                                    key={att.id}
+                                    className="px-3 py-1.5 bg-gray-200 text-gray-500 text-xs font-semibold rounded-lg cursor-not-allowed"
+                                  >
+                                    Attempt {att.attempt_no}
+                                  </span>
+                                )
+                              )}
+                            </>
+                          );
+                        }
+                        return null;
+                      };
+
+                      /* Case 1: In-progress attempt — Resume only */
+                      if (inProgress) {
+                        return (
+                          <a
+                            href={`/attempt-take?attempt_id=${inProgress.id}`}
+                            className="px-4 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 no-underline"
+                          >
+                            Resume Exam →
+                          </a>
+                        );
+                      }
+
+                      /* Case 2: Attempts remaining — Start + prior results */
+                      if (attemptsRemaining > 0) {
+                        return (
+                          <>
+                            <a
+                              href={`/attempt-start?exam_id=${exam.exam_id}`}
+                              className="px-4 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 no-underline"
+                            >
+                              Start Exam →
+                            </a>
+                            {resultsButtons()}
+                          </>
+                        );
+                      }
+
+                      /* Cases 3 & 4: No attempts remaining — results only */
+                      return resultsButtons();
+                    })()}
                   </div>
                 </div>
               </Card>
