@@ -117,7 +117,7 @@ export function ExamEngine({
           flags: flagsRef.current,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as { ok?: boolean };
       setSaveStatus(data.ok ? "saved" : "error");
     } catch {
       setSaveStatus("error");
@@ -140,7 +140,7 @@ export function ExamEngine({
           flags: flagsRef.current,
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as { ok?: boolean; redirect?: string };
       if (data.ok && data.redirect) {
         window.location.href = data.redirect;
       }
