@@ -107,6 +107,7 @@ export default async function TeacherPage() {
             {auth.memberships.length > 1 && (
               <a href="/choose-school" className="text-teal-700 hover:underline">Switch school</a>
             )}
+            <a href="/question-bank" className="text-teal-700 hover:underline">Question Bank</a>
             <a href="/profile" className="text-teal-700 hover:underline">Profile</a>
             <a href="/logout" className="text-teal-700 hover:underline">Logout</a>
           </div>
