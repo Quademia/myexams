@@ -105,7 +105,10 @@ src/
     exam-bank-picker/page.tsx  ← /exam-bank-picker
     question-bank/page.tsx     ← /question-bank
     attempt-start/page.tsx     ← /attempt-start
-    attempt-take/page.tsx      ← /attempt-take (placeholder)
+    attempt-take/page.tsx      ← /attempt-take (live exam engine)
+    attempt-complete/page.tsx  ← /attempt-complete (post-submit confirmation)
+    attempt-review/page.tsx    ← /attempt-review (answer review with corrections)
+    api/attempt-take/route.ts  ← POST /api/attempt-take (autosave + submit API)
     attempt-results/page.tsx   ← /attempt-results
 
   components/                  ← Reusable UI components
@@ -115,7 +118,8 @@ src/
     PageHeader.tsx             ← Title + back link
     SchoolLayout.tsx           ← Header + nav for all /school-* pages
     ResultsTable.tsx           ← Client component: filterable/sortable results table
-    MobileGradingDrawer.tsx    ← Client component: floating button + drawer for mobile grading
+    GradingEngine.tsx          ← Client component: live grading with reactive sidebar, score total, mobile FAB
+    ExamEngine.tsx             ← Client component: live exam-taking engine (timer, autosave, navigation)
     QuestionFormFields.tsx     ← Client component: question form with dynamic options
     GradeBandsEditor.tsx       ← Client component: grade band editor
     CustomFieldsEditor.tsx     ← Client component: custom field editor
@@ -149,7 +153,7 @@ CLAUDE.md                      ← Instructions for Claude
 
 ---
 
-## All Routes (34 total)
+## All Routes (37 total)
 
 ### Auth & Navigation (7)
 | Route | Description |
@@ -193,17 +197,20 @@ CLAUDE.md                      ← Instructions for Claude
 | `/exam-builder` | 7 tabs: Settings, Questions, Preview, Publish, Access, Results, Approvals |
 | `/exam-create` | POST handler — creates exam, redirects to builder |
 | `/exam-preview` | Read-only exam preview for teachers |
-| `/exam-grade` | Grading interface — three modes: grade (score manual questions), view (read-only), approver review (GRADING gate). Two-column desktop layout, mobile drawer. |
+| `/exam-grade` | Grading interface — three modes: grade (score manual questions), view (read-only), approver review (GRADING gate). Two-column desktop layout with live `GradingEngine` client component (reactive sidebar, live score total, mobile FAB). |
 | `/exam-results-csv` | GET route — CSV export of exam results with correct columns and Content-Disposition header |
 | `/exam-bank-picker` | Pick questions from bank to add to exam |
 | `/question-bank` | Question bank management — full CRUD, share toggle (PERSONAL↔SCHOOL), type/visibility filters |
 
-### Student (4)
+### Student (7)
 | Route | Description |
 |---|---|
 | `/student` | Student dashboard — exams, sittings, attempt tracking |
 | `/attempt-start` | Exam lobby — info + start button |
-| `/attempt-take` | **Placeholder** — exam-taking interface (needs client-side React) |
+| `/attempt-take` | Live exam-taking interface — timer, autosave, FREE/SEQUENTIAL modes, question grid, flagging, submit |
+| `/attempt-complete` | Post-submission confirmation screen with results availability info |
+| `/attempt-review` | Answer review with correct answers, option feedback, model answers, teacher notes |
+| `/api/attempt-take` | POST API — autosave answers + final submit with auto-grading |
 | `/attempt-results` | View scored attempt results |
 
 ### Other (3)
@@ -228,9 +235,6 @@ CLAUDE.md                      ← Instructions for Claude
 ---
 
 ## What's Still Needed
-
-### Placeholder
-- `/attempt-take` — interactive exam-taking interface (timer, question navigation, auto-save). First page that will use React client-side interactivity.
 
 ### Known Issues
 - Exam preview and exam builder may error when accessed as system admin without active school — partially fixed, needs more testing
@@ -267,8 +271,15 @@ Before adding new capabilities, all existing logic from the old build must work 
 - CSV export route — new GET handler at /exam-results-csv with correct columns, CSV escaping, Content-Disposition header
 - Grading page — full rebuild: two-column desktop layout, sidebar showing ungraded questions, view=1 read-only mode, approver mode (GRADING gate), grade band recalculation (grade field now correctly calculated), context-aware back link, mobile drawer, gate decision banner
 
+**✅ Verified & Fixed (2026-03-25 — session 2):**
+- `/attempt-take` — TypeScript strict mode error fixed (`res.json()` typed as `unknown`); page now loads correctly in production
+- Student dashboard — multiple attempts button logic fixed: students with attempts remaining now correctly see both "Start Exam" and prior "View Results" buttons simultaneously (was mutually exclusive before)
+- Grading page (`/exam-grade`) — two issues fixed:
+  - Save Grades button was hidden on desktop (sidebar button was outside the form and marked `hidden`); fixed by moving submit button inside the form via new `GradingEngine` client component
+  - Sidebar "Needs Grading" list was static (server-rendered only); now updates live as teacher enters scores, with live running score total and mobile FAB updates — matches old build behaviour exactly
+- `GradingEngine.tsx` — new client component created to own all grading interactivity; replaces the static server-rendered sidebar and the now-redundant `MobileGradingDrawer` pattern
+
 **Still TODO:**
-- Build the `/attempt-take` interactive exam-taking interface
 - Verify teacher and student flows end-to-end
 - Test full flow: login → dashboard → create exam → publish → student takes exam → grading → results
 - Remove `functions/` folder once migration is fully verified
@@ -282,7 +293,7 @@ Once existing logic is solid, these upgrades use React's client-side capabilitie
 **1. Client-Side Interactivity (biggest upgrade)**
 - People page: live search and instant filter updates without page reloads
 - Exam builder: dynamic answer options, drag-to-reorder questions, live preview as you type
-- Student exam taking (`/attempt-take`): countdown timer, question navigation, auto-save
+- Student exam taking (`/attempt-take`): already built with timer, navigation, auto-save — enhance with drag-to-reorder, richer text editor for essays
 - Sitting builder: expandable paper rows showing approval gates inline
 
 **2. Drawers and Panels**
