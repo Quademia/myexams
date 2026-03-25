@@ -71,13 +71,13 @@ export async function POST(request: Request) {
   await run(
     `INSERT INTO exams
        (id, tenant_id, course_id, title, description,
-        status, duration_mins, time_limit_minutes,
+        status, duration_mins,
         shuffle_questions, score_display, pass_mark_percent,
         allow_review, max_attempts, exam_password,
         starts_at, ends_at, results_published_at,
         created_by, created_at, updated_at)
      VALUES (?,?,?,?,NULL,
-             'DRAFT', 60, 60,
+             'DRAFT', 60,
              0, 'BOTH', 50,
              0, 1, NULL,
              NULL, NULL, NULL,

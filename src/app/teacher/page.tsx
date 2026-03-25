@@ -21,9 +21,9 @@ async function createExamAction(formData: FormData) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   await run(
-    `INSERT INTO exams (id, tenant_id, course_id, title, description, status, time_limit_minutes, shuffle_questions,
+    `INSERT INTO exams (id, tenant_id, course_id, title, description, status, duration_mins, shuffle_questions,
        score_display, pass_mark_percent, allow_review, max_attempts, created_by, created_at, updated_at)
-     VALUES (?,?,?,?,NULL,'DRAFT',NULL,0,'BOTH',NULL,1,1,?,?,?)`,
+     VALUES (?,?,?,?,NULL,'DRAFT',60,0,'BOTH',50,0,1,?,?,?)`,
     [id, active.tenant_id, courseId, title, auth.user!.id, now, now]
   );
   redirect(`/exam-builder?exam_id=${id}`);
