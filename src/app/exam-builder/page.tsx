@@ -13,6 +13,7 @@ import { TabNav } from "@/components/TabNav";
 import { GradeBandsEditor } from "@/components/GradeBandsEditor";
 import { CustomFieldsEditor } from "@/components/CustomFieldsEditor";
 import { QuestionFormFields } from "@/components/QuestionFormFields";
+import { ResultsTable } from "@/components/ResultsTable";
 
 // ============================================================
 // Server Actions
@@ -1140,7 +1141,7 @@ export default async function ExamBuilderPage({
       {tab === "access" && <AccessTab examId={exam.id} courseId={exam.course_id} tenantId={tid} examStatus={exam.status} />}
 
       {/* Results Tab */}
-      {tab === "results" && <ResultsTab examId={exam.id} tenantId={tid} resultsPublished={exam.results_published_at} />}
+      {tab === "results" && <ResultsTab examId={exam.id} tenantId={tid} resultsPublished={exam.results_published_at} maxAttempts={exam.max_attempts} passMarkPercent={exam.pass_mark_percent} />}
 
       {/* Approvals Tab */}
       {tab === "approvals" && hasGates && <ApprovalsTab examId={exam.id} tenantId={tid} userRole={active?.role || "SCHOOL_ADMIN"} />}
@@ -1449,22 +1450,75 @@ async function AccessTab({ examId, courseId, tenantId, examStatus }: { examId: s
 // Results Tab
 // ============================================================
 
-async function ResultsTab({ examId, tenantId, resultsPublished }: { examId: string; tenantId: string; resultsPublished: string | null }) {
-  const { all } = getDb();
+async function ResultsTab({ examId, tenantId, resultsPublished, maxAttempts, passMarkPercent }: {
+  examId: string; tenantId: string; resultsPublished: string | null;
+  maxAttempts: number; passMarkPercent: number | null;
+}) {
+  const { all, first } = getDb();
 
-  const attempts = await all<{
-    id: string; student_name: string; attempt_no: number;
-    grading_status: string; score_raw: number | null; score_total: number | null;
-    score_pct: number | null; grade: string | null; submitted_at: string | null;
-  }>(
-    `SELECT ea.id, u.name AS student_name, ea.attempt_no,
-       ea.grading_status, ea.score_raw, ea.score_total, ea.score_pct,
-       ea.grade, ea.submitted_at
-     FROM exam_attempts ea JOIN users u ON u.id = ea.user_id
-     WHERE ea.exam_id=? AND ea.tenant_id=? AND ea.status='SUBMITTED'
-     ORDER BY u.name ASC, ea.attempt_no ASC`,
-    [examId, tenantId]
-  );
+  // Fetch submitted attempts, in-progress count, custom field defs, and grade bands in parallel.
+  const [attempts, inProgressRow, customFieldDefs, gradeBands] = await Promise.all([
+    all<{
+      id: string; user_id: string; student_name: string; attempt_no: number;
+      grading_status: string; score_raw: number | null; score_total: number | null;
+      score_pct: number | null; grade: string | null; pass_mark_percent: number | null;
+      started_at: string | null; submitted_at: string | null;
+      time_taken_secs: number | null; custom_fields_json: string | null;
+    }>(
+      `SELECT ea.id, ea.user_id, u.name AS student_name, ea.attempt_no,
+         ea.grading_status, ea.score_raw, ea.score_total, ea.score_pct,
+         ea.grade, ea.pass_mark_percent, ea.started_at, ea.submitted_at,
+         ea.time_taken_secs, ea.custom_fields_json
+       FROM exam_attempts ea
+       JOIN users u ON u.id = ea.user_id
+       WHERE ea.exam_id=? AND ea.tenant_id=? AND ea.status='SUBMITTED'
+       ORDER BY u.name ASC, ea.attempt_no ASC`,
+      [examId, tenantId]
+    ),
+    first<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM exam_attempts
+       WHERE exam_id=? AND tenant_id=? AND status='IN_PROGRESS'`,
+      [examId, tenantId]
+    ),
+    all<{ id: string; field_label: string }>(
+      `SELECT id, field_label FROM exam_custom_fields
+       WHERE exam_id=? ORDER BY sort_order ASC`,
+      [examId]
+    ),
+    all<{ label: string; min_percent: number }>(
+      `SELECT label, min_percent FROM exam_grade_bands
+       WHERE exam_id=? ORDER BY min_percent DESC`,
+      [examId]
+    ),
+  ]);
+
+  const inProgressCount = Number(inProgressRow?.c ?? 0);
+  const needsGradingCount = attempts.filter((a) => a.grading_status === "AUTO_GRADED").length;
+  const avgScore = attempts.length > 0
+    ? Math.round(attempts.reduce((sum, a) => sum + (a.score_pct ?? 0), 0) / attempts.length)
+    : null;
+
+  // Build serialisable row objects for the client component.
+  const rows = attempts.map((a) => {
+    let customFields: Record<string, string> = {};
+    if (a.custom_fields_json) {
+      try { customFields = JSON.parse(a.custom_fields_json); } catch { /* ignore */ }
+    }
+    return {
+      id: a.id,
+      studentName: a.student_name,
+      attemptNo: a.attempt_no,
+      gradingStatus: a.grading_status,
+      scoreRaw: a.score_raw,
+      scoreTotal: a.score_total,
+      scorePct: a.score_pct,
+      grade: a.grade,
+      passMark: a.pass_mark_percent,
+      timeSecs: a.time_taken_secs,
+      submittedAt: a.submitted_at,
+      customFields,
+    };
+  });
 
   const released = resultsPublished && Date.parse(resultsPublished) <= Date.now();
 
@@ -1489,51 +1543,36 @@ async function ResultsTab({ examId, tenantId, resultsPublished }: { examId: stri
         </div>
       )}
 
-      <Card title={`Submitted Attempts (${attempts.length})`}>
-        {attempts.length === 0 ? (
-          <p className="text-sm text-gray-400 py-4 text-center">No submitted attempts yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">Student</th>
-                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">Grading</th>
-                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">Score</th>
-                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">%</th>
-                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">Grade</th>
-                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2">Submitted</th>
-                  <th className="text-left text-xs text-gray-500 uppercase py-2 px-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {attempts.map((a) => (
-                  <tr key={a.id} className="border-b border-gray-100">
-                    <td className="py-2 px-2 font-medium">{a.student_name}</td>
-                    <td className="py-2 px-2">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                        a.grading_status === "FULLY_GRADED" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
-                      }`}>
-                        {a.grading_status === "FULLY_GRADED" ? "Graded" : "Needs Grading"}
-                      </span>
-                    </td>
-                    <td className="py-2 px-2">{a.score_raw !== null ? `${a.score_raw}/${a.score_total}` : "—"}</td>
-                    <td className="py-2 px-2">{a.score_pct !== null ? `${Math.round(a.score_pct)}%` : "—"}</td>
-                    <td className="py-2 px-2">{a.grade || "—"}</td>
-                    <td className="py-2 px-2 text-xs text-gray-400">{fmtISO(a.submitted_at)}</td>
-                    <td className="py-2 px-2">
-                      <a href={`/exam-grade?attempt_id=${a.id}&exam_id=${examId}`}
-                        className="px-2 py-1 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 no-underline">
-                        {a.grading_status === "AUTO_GRADED" ? "Grade" : "View"}
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      {/* Summary stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        <Card>
+          <p className="text-xs text-gray-500 uppercase">Total Submitted</p>
+          <p className="text-2xl font-bold">{attempts.length}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-gray-500 uppercase">In Progress</p>
+          <p className="text-2xl font-bold">{inProgressCount}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-gray-500 uppercase">Needs Grading</p>
+          <p className="text-2xl font-bold">{needsGradingCount}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-gray-500 uppercase">Avg Score</p>
+          <p className="text-2xl font-bold">{avgScore !== null ? `${avgScore}%` : "—"}</p>
+        </Card>
+      </div>
+
+      {/* Client-side results table with filtering and sorting */}
+      <ResultsTable
+        rows={rows}
+        customFieldDefs={customFieldDefs.map((d) => ({ id: d.id, label: d.field_label }))}
+        hasMultipleAttempts={maxAttempts > 1}
+        hasPassMark={passMarkPercent !== null}
+        hasGradeBands={gradeBands.length > 0}
+        examId={examId}
+        csvUrl={`/exam-results-csv?exam_id=${examId}`}
+      />
     </>
   );
 }
