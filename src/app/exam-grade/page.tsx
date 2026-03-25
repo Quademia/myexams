@@ -11,20 +11,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/Card";
-import { MobileGradingDrawer } from "@/components/MobileGradingDrawer";
-
-// ============================================================
-// Question type label helper
-// ============================================================
-
-const qTypeLabel = (t: string) => {
-  if (t === "MCQ") return "Multiple Choice";
-  if (t === "MULTIPLE_SELECT") return "Multiple Select";
-  if (t === "TRUE_FALSE") return "True / False";
-  if (t === "SHORT_ANSWER") return "Short Answer";
-  if (t === "ESSAY") return "Essay";
-  return t;
-};
+import { GradingEngine } from "@/components/GradingEngine";
 
 // ============================================================
 // Server Actions
@@ -315,28 +302,64 @@ export default async function ExamGradePage({
   // ---------- Derived state ----------
   const needsManualGrading = !viewOnly && attempt.grading_status === "AUTO_GRADED";
 
-  // Build ungraded questions list for sidebar + mobile drawer.
-  const manualQuestions = questions
-    .map((q, i) => ({ ...q, number: i + 1 }))
-    .filter((q) => q.question_type === "SHORT_ANSWER" || q.question_type === "ESSAY");
-
-  const ungradedManual = manualQuestions.filter((q) => {
-    const ans = answerByQ[q.id];
-    return ans?.score_awarded === null || ans?.score_awarded === undefined;
-  });
-
-  // Score so far.
-  const scoreSoFar = answers.reduce((s, a) => s + Number(a.score_awarded ?? 0), 0);
-  const scoreTotal = questions.reduce((s, q) => s + Number(q.marks), 0);
+  const scoreTotalVal = questions.reduce((s, q) => s + Number(q.marks), 0);
 
   // Index other approver comments by question.
   const otherCommentsByQ: Record<string, { comment: string; approver_name: string }[]> = {};
   for (const c of otherApproverComments) {
     if (!otherCommentsByQ[c.question_id]) otherCommentsByQ[c.question_id] = [];
-    // Skip own comments in "other" list when in approver mode.
     if (isGradingApprover && myGradingComments[c.question_id] === c.comment) continue;
     otherCommentsByQ[c.question_id].push(c);
   }
+
+  // Compute baseScore: sum of scores from auto-graded (non-manual) questions only.
+  // Manual question scores will be tracked live inside GradingEngine.
+  let baseScore = 0;
+  for (const a of answers) {
+    const q = questions.find((qq) => qq.id === a.question_id);
+    if (!q) continue;
+    const isManual = q.question_type === "SHORT_ANSWER" || q.question_type === "ESSAY";
+    if (!isManual && a.score_awarded !== null && a.score_awarded !== undefined) {
+      baseScore += Number(a.score_awarded);
+    }
+  }
+
+  // Build initialUngradedIds: manual question IDs that have no score yet.
+  const initialUngradedIds = questions
+    .filter((q) => {
+      if (q.question_type !== "SHORT_ANSWER" && q.question_type !== "ESSAY") return false;
+      const ans = answerByQ[q.id];
+      return ans?.score_awarded === null || ans?.score_awarded === undefined;
+    })
+    .map((q) => q.id);
+
+  // Build question data array for the client component.
+  const questionData = questions.map((q) => ({
+    id: q.id,
+    question_type: q.question_type,
+    question_text: q.question_text,
+    marks: Number(q.marks),
+    model_answer: q.model_answer,
+    feedback: q.feedback,
+    sort_order: q.sort_order,
+    options: (optsByQ[q.id] || []).map((o) => ({
+      id: o.id,
+      question_id: o.question_id,
+      option_text: o.option_text,
+      is_correct: o.is_correct,
+      sort_order: o.sort_order,
+    })),
+    answer: answerByQ[q.id]
+      ? {
+          question_id: answerByQ[q.id].question_id,
+          answer_json: answerByQ[q.id].answer_json,
+          score_awarded: answerByQ[q.id].score_awarded,
+          teacher_note: answerByQ[q.id].teacher_note,
+        }
+      : null,
+    otherComments: otherCommentsByQ[q.id] || [],
+    myComment: myGradingComments[q.id] || "",
+  }));
 
   // ---------- Page title ----------
   const pageTitle = isGradingApprover
@@ -350,201 +373,68 @@ export default async function ExamGradePage({
     : `/exam-builder?exam_id=${examId}&tab=results`;
   const backLabel = isGradingApprover ? "← Approval Inbox" : "← Back to Results";
 
-  // ============================================================
-  // JSX — Question card renderer (used inside and outside form)
-  // ============================================================
+  // ---------- Determine mode for the client component ----------
+  const engineMode: "grade" | "view" | "approver" = isGradingApprover
+    ? "approver"
+    : needsManualGrading
+      ? "grade"
+      : "view";
 
-  const questionCards = questions.map((q, i) => {
-    const opts = optsByQ[q.id] || [];
-    const ans = answerByQ[q.id];
-    const isManual = q.question_type === "SHORT_ANSWER" || q.question_type === "ESSAY";
-    const isAlreadyGraded = ans?.score_awarded !== null && ans?.score_awarded !== undefined;
-
-    // Parse answer_json for selected option IDs.
-    let selectedIds: Set<string> = new Set();
-    if (ans?.answer_json) {
-      try {
-        const parsed = JSON.parse(ans.answer_json);
-        if (Array.isArray(parsed)) {
-          selectedIds = new Set(parsed.map(String));
-        } else if (parsed !== null && parsed !== undefined) {
-          selectedIds = new Set([String(parsed)]);
-        }
-      } catch { /* ignore */ }
-    }
-
-    // Student's text answer (for SHORT_ANSWER/ESSAY).
-    let studentTextAnswer = "";
-    if (isManual && ans?.answer_json) {
-      try {
-        studentTextAnswer = typeof ans.answer_json === "string" ? ans.answer_json : "";
-        // If it's a JSON string (quoted), try to parse it.
-        const parsed = JSON.parse(ans.answer_json);
-        if (typeof parsed === "string") studentTextAnswer = parsed;
-      } catch {
-        studentTextAnswer = ans.answer_json || "";
-      }
-    }
-
-    const otherComments = otherCommentsByQ[q.id] || [];
-
-    return (
-      <div key={q.id} id={`q-${q.id}`}>
-        <Card>
-          <div className="flex gap-3 items-start">
-            {/* Question number badge */}
-            <div className="min-w-[32px] h-8 flex items-center justify-center rounded-full bg-teal-700 text-white text-sm font-bold flex-shrink-0">
-              {i + 1}
-            </div>
-            <div className="flex-1 min-w-0">
-              {/* Header row: type badge + marks */}
-              <div className="flex gap-2 items-center mb-1 flex-wrap">
-                <span className="inline-block px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[11px] font-semibold">
-                  {qTypeLabel(q.question_type)}
-                </span>
-                {isAlreadyGraded ? (
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                    Number(ans!.score_awarded) >= Number(q.marks) ? "bg-green-50 text-green-700"
-                    : Number(ans!.score_awarded) > 0 ? "bg-amber-50 text-amber-700"
-                    : "bg-red-50 text-red-700"
-                  }`}>
-                    {ans!.score_awarded}/{q.marks}
-                  </span>
-                ) : (
-                  <span className="text-xs text-gray-400 ml-auto">{q.marks} mark{Number(q.marks) !== 1 ? "s" : ""}</span>
-                )}
-              </div>
-
-              {/* Question text */}
-              <div className="text-sm mb-3 whitespace-pre-wrap">{q.question_text}</div>
-
-              {/* MCQ / TRUE_FALSE / MULTIPLE_SELECT — option list */}
-              {opts.length > 0 && (
-                <div className="space-y-1 mb-3">
-                  {opts.map((o) => {
-                    const wasSelected = selectedIds.has(String(o.id));
-                    const isCorrect = o.is_correct === 1;
-                    const isMultipleSelect = q.question_type === "MULTIPLE_SELECT";
-
-                    let bg = "bg-gray-50 border-gray-200";
-                    let icon = "";
-                    if (wasSelected && isCorrect) {
-                      bg = "bg-green-50 border-green-200";
-                      icon = "✓";
-                    } else if (wasSelected && !isCorrect) {
-                      bg = "bg-red-50 border-red-200";
-                      icon = "✗";
-                    } else if (isCorrect && isMultipleSelect) {
-                      // Correct option student missed (MULTIPLE_SELECT only).
-                      bg = "bg-amber-50 border-amber-200";
-                      icon = "✓";
-                    } else if (isCorrect) {
-                      bg = "bg-green-50/50 border-green-100";
-                      icon = "✓";
-                    }
-
-                    return (
-                      <div key={o.id} className={`px-3 py-2 rounded-lg text-sm border ${bg} flex items-center gap-2`}>
-                        {icon && (
-                          <span className={`text-xs font-bold ${
-                            icon === "✓" ? "text-green-600" : "text-red-600"
-                          }`}>{icon}</span>
-                        )}
-                        <span>{o.option_text}</span>
-                        {wasSelected && <span className="font-semibold text-xs text-gray-500 ml-1">● selected</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* SHORT_ANSWER / ESSAY */}
-              {isManual && (
-                <div className="mb-3">
-                  <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-1">Student&apos;s answer</div>
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm whitespace-pre-wrap min-h-[2rem]">
-                    {studentTextAnswer || <span className="text-gray-400 italic">No answer provided</span>}
-                  </div>
-
-                  {/* Model answer */}
-                  {q.model_answer && (
-                    <div className="mt-2">
-                      <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-1">Model answer</div>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm whitespace-pre-wrap">
-                        {q.model_answer}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Grading inputs — only in grade mode and not yet fully graded */}
-                  {needsManualGrading && (
-                    <div className="grid grid-cols-2 gap-3 mt-3">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Score (max {q.marks})</label>
-                        <input
-                          name={`score_${q.id}`}
-                          type="number"
-                          min="0"
-                          max={q.marks}
-                          step="0.5"
-                          defaultValue={ans?.score_awarded ?? ""}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Note (optional)</label>
-                        <input
-                          name={`note_${q.id}`}
-                          defaultValue={ans?.teacher_note || ""}
-                          placeholder="Feedback"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Existing teacher note (view mode or already graded in grade mode) */}
-                  {(viewOnly || (isAlreadyGraded && !needsManualGrading)) && ans?.teacher_note && (
-                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <div className="text-xs text-amber-700 font-semibold uppercase tracking-wide mb-1">Teacher note</div>
-                      <div className="text-sm">{ans.teacher_note}</div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Approver comments section (view mode only) */}
-              {viewOnly && (
-                <div className="space-y-2">
-                  {/* Other approvers' comments */}
-                  {otherComments.map((c, ci) => (
-                    <div key={ci} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                      <div className="text-xs text-gray-500 font-semibold mb-1">{c.approver_name}</div>
-                      <div className="text-sm">{c.comment}</div>
-                    </div>
-                  ))}
-
-                  {/* Own comment textarea (approver mode) */}
-                  {isGradingApprover && (
-                    <div className="mt-2">
-                      <label className="block text-xs text-gray-500 mb-1">Your comment on this question (optional)</label>
-                      <textarea
-                        name={`comment_${q.id}`}
-                        defaultValue={myGradingComments[q.id] || ""}
-                        rows={2}
-                        placeholder="Add a comment…"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </Card>
+  // ---------- Pre-render banners as server JSX ----------
+  const gateDecisionBanner =
+    viewOnly && !isGradingApprover && gateDecision ? (
+      <div
+        className={`rounded-xl p-3 mb-3 text-sm ${
+          gateDecision.status === "APPROVED"
+            ? "bg-green-50 border border-green-200 text-green-700"
+            : "bg-red-50 border border-red-200 text-red-700"
+        }`}
+      >
+        {gateDecision.status === "APPROVED" ? "✅" : "❌"} Grading Gate{" "}
+        {gateDecision.status === "APPROVED" ? "Approved" : "Rejected"} by{" "}
+        {gateDecision.approver_name}
+        {gateDecision.note && (
+          <div className="mt-1 text-xs opacity-80">{gateDecision.note}</div>
+        )}
       </div>
-    );
-  });
+    ) : null;
+
+  const approverBanner = isGradingApprover ? (
+    <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3 text-sm text-amber-800">
+      You are reviewing this submission for the Grading Gate. Add comments per
+      question below, then approve or reject at the bottom.
+    </div>
+  ) : null;
+
+  const viewOnlyBanner =
+    viewOnly && !isGradingApprover ? (
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3 text-sm text-blue-700">
+        This attempt is fully graded — view only
+      </div>
+    ) : null;
+
+  // Shared GradingEngine element
+  const gradingEngine = (
+    <GradingEngine
+      attemptId={attemptId!}
+      examId={examId!}
+      mode={engineMode}
+      questions={questionData}
+      baseScore={baseScore}
+      scoreTotal={scoreTotalVal}
+      initialUngradedIds={initialUngradedIds}
+      attempt={{
+        score_raw: attempt.score_raw,
+        score_total: attempt.score_total,
+        score_pct: attempt.score_pct,
+        grade: attempt.grade,
+        pass_mark_percent: attempt.pass_mark_percent,
+      }}
+      gateDecisionBanner={gateDecisionBanner}
+      approverBanner={approverBanner}
+      viewOnlyBanner={viewOnlyBanner}
+    />
+  );
 
   // ============================================================
   // Render
@@ -554,201 +444,73 @@ export default async function ExamGradePage({
     <main className="max-w-6xl mx-auto p-4">
       {/* Header card */}
       <Card>
-        <a href={backHref} className="text-sm text-gray-400 hover:underline">{backLabel}</a>
+        <a href={backHref} className="text-sm text-gray-400 hover:underline">
+          {backLabel}
+        </a>
         <h1 className="text-lg font-bold mt-2">{pageTitle}</h1>
         <p className="text-sm text-gray-500 mt-0.5">{exam.title}</p>
         <div className="text-xs text-gray-400 mt-1">
-          Student: <strong className="text-gray-600">{attempt.student_name}</strong>
+          Student:{" "}
+          <strong className="text-gray-600">{attempt.student_name}</strong>
           {" · "}Attempt {attempt.attempt_no}
-          {attempt.submitted_at && <>{" · "}Submitted {fmtISO(attempt.submitted_at)}</>}
+          {attempt.submitted_at && (
+            <>
+              {" · "}Submitted {fmtISO(attempt.submitted_at)}
+            </>
+          )}
         </div>
       </Card>
 
-      {/* Banners */}
-      {/* Gate decision banner (view mode, not approver) */}
-      {viewOnly && !isGradingApprover && gateDecision && (
-        <div className={`rounded-xl p-3 mb-3 text-sm ${
-          gateDecision.status === "APPROVED"
-            ? "bg-green-50 border border-green-200 text-green-700"
-            : "bg-red-50 border border-red-200 text-red-700"
-        }`}>
-          {gateDecision.status === "APPROVED" ? "✅" : "❌"} Grading Gate {gateDecision.status === "APPROVED" ? "Approved" : "Rejected"} by {gateDecision.approver_name}
-          {gateDecision.note && <div className="mt-1 text-xs opacity-80">{gateDecision.note}</div>}
-        </div>
-      )}
+      {needsManualGrading ? (
+        // Grade mode — wrap GradingEngine in form so submit buttons work.
+        <form action={gradeAction}>
+          <input type="hidden" name="attempt_id" value={attemptId} />
+          <input type="hidden" name="exam_id" value={examId} />
+          {gradingEngine}
+        </form>
+      ) : isGradingApprover ? (
+        // Approver mode — wrap in form for comments + approve/reject.
+        <form action={gradingReviewRespondAction}>
+          <input type="hidden" name="attempt_id" value={attemptId} />
+          <input type="hidden" name="exam_id" value={examId} />
+          <input type="hidden" name="gate_type" value="GRADING" />
+          {gradingEngine}
 
-      {/* Approver banner */}
-      {isGradingApprover && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3 text-sm text-amber-800">
-          You are reviewing this submission for the Grading Gate. Add comments per question below, then approve or reject at the bottom.
-        </div>
-      )}
-
-      {/* View-only banner (not approver) */}
-      {viewOnly && !isGradingApprover && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3 text-sm text-blue-700">
-          This attempt is fully graded — view only
-        </div>
-      )}
-
-      {/* Two-column layout */}
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4">
-        {/* LEFT COLUMN — Questions */}
-        <div>
-          {needsManualGrading ? (
-            // Grade mode — wrap in form.
-            <form action={gradeAction}>
-              <input type="hidden" name="attempt_id" value={attemptId} />
-              <input type="hidden" name="exam_id" value={examId} />
-              {questionCards}
-              {/* Mobile sticky save bar */}
-              <div className="md:hidden sticky bottom-0 bg-white border-t border-gray-200 p-3 mt-3 rounded-b-xl">
-                <button type="submit" className="w-full px-6 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                  Save Grades
-                </button>
-              </div>
-            </form>
-          ) : isGradingApprover ? (
-            // Approver mode — wrap in form for comments + approve/reject.
-            <form action={gradingReviewRespondAction}>
-              <input type="hidden" name="attempt_id" value={attemptId} />
-              <input type="hidden" name="exam_id" value={examId} />
-              <input type="hidden" name="gate_type" value="GRADING" />
-              {questionCards}
-
-              {/* Approver decision card */}
-              <Card>
-                <h3 className="font-bold text-sm mb-3">Grading Gate Decision</h3>
-                <label className="block text-xs text-gray-500 mb-1">Overall note (optional)</label>
-                <textarea
-                  name="note"
-                  rows={3}
-                  placeholder="Add an overall note…"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3"
-                />
-                <div className="flex gap-3">
-                  <button
-                    type="submit"
-                    name="response"
-                    value="APPROVED"
-                    className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700"
-                  >
-                    ✅ Approve
-                  </button>
-                  <button
-                    type="submit"
-                    name="response"
-                    value="REJECTED"
-                    className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700"
-                  >
-                    ❌ Reject
-                  </button>
-                </div>
-              </Card>
-            </form>
-          ) : (
-            // View mode — no form wrapper.
-            <>{questionCards}</>
-          )}
-        </div>
-
-        {/* RIGHT SIDEBAR — desktop only */}
-        <div className="hidden md:block">
-          <div className="sticky top-4 space-y-3">
-            {needsManualGrading ? (
-              // Grade mode sidebar.
-              <>
-                <Card>
-                  <h3 className="font-bold text-sm mb-2">Needs Grading</h3>
-                  {ungradedManual.length === 0 ? (
-                    <p className="text-sm text-green-600">All questions graded ✓</p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {ungradedManual.map((q) => (
-                        <li key={q.id}>
-                          <a
-                            href={`#q-${q.id}`}
-                            className="text-sm text-teal-700 hover:underline no-underline block"
-                          >
-                            <span className="font-bold">Q{q.number}</span>{" "}
-                            <span className="text-gray-500 text-xs">
-                              {q.question_text.length > 30 ? q.question_text.slice(0, 30) + "…" : q.question_text}
-                            </span>
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Card>
-                <Card>
-                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Score so far</div>
-                  <div className="text-xl font-bold">{scoreSoFar} <span className="text-gray-400 font-normal">/ {scoreTotal}</span></div>
-                </Card>
-                {/* Submit button in sidebar */}
-                <button
-                  type="submit"
-                  form="grade-form-stub"
-                  className="w-full px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800 hidden"
-                >
-                  Save Grades
-                </button>
-                {/* Since the button needs to be inside the form to submit it,
-                    we use a script-free approach: a link-style button that
-                    triggers the form via the form attribute — but Next.js
-                    server actions require the button inside the form element.
-                    Instead, the actual submit is in the form itself.
-                    This sidebar serves as reference/navigation. */}
-              </>
-            ) : (
-              // View mode sidebar — score summary.
-              <Card>
-                <h3 className="font-bold text-sm mb-2">Score Summary</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Score</span>
-                    <span className="font-semibold">
-                      {attempt.score_raw !== null ? `${attempt.score_raw} / ${attempt.score_total}` : "—"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Percentage</span>
-                    <span className="font-semibold">
-                      {attempt.score_pct !== null ? `${Math.round(attempt.score_pct)}%` : "—"}
-                    </span>
-                  </div>
-                  {attempt.grade && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Grade</span>
-                      <span className="font-semibold">{attempt.grade}</span>
-                    </div>
-                  )}
-                  {attempt.pass_mark_percent !== null && attempt.score_pct !== null && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Result</span>
-                      {attempt.score_pct >= attempt.pass_mark_percent ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-50 text-green-700">Pass</span>
-                      ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700">Fail</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </Card>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile grading drawer (grade mode only) */}
-      {needsManualGrading && (
-        <MobileGradingDrawer
-          ungradedQuestions={ungradedManual.map((q) => ({
-            id: q.id,
-            number: q.number,
-            text: q.question_text,
-          }))}
-          totalUngraded={ungradedManual.length}
-        />
+          {/* Approver decision card */}
+          <Card>
+            <h3 className="font-bold text-sm mb-3">Grading Gate Decision</h3>
+            <label className="block text-xs text-gray-500 mb-1">
+              Overall note (optional)
+            </label>
+            <textarea
+              name="note"
+              rows={3}
+              placeholder="Add an overall note…"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3"
+            />
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                name="response"
+                value="APPROVED"
+                className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700"
+              >
+                ✅ Approve
+              </button>
+              <button
+                type="submit"
+                name="response"
+                value="REJECTED"
+                className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700"
+              >
+                ❌ Reject
+              </button>
+            </div>
+          </Card>
+        </form>
+      ) : (
+        // View mode — no form wrapper.
+        gradingEngine
       )}
     </main>
   );
