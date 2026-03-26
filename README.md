@@ -354,6 +354,12 @@ These routes appear to be built but have not been formally walked through:
 
 ---
 
+## Deferred Cleanup
+
+- [ ] Remove /setup link from login page before real production launch — confusing for students and teachers once the platform has live schools
+
+---
+
 ## Known Issues
 
 - Exam preview and exam builder may error when accessed as system admin without an active school — partially fixed, needs more testing
