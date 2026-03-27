@@ -48,9 +48,8 @@ The migration to the new stack was essential preparation — it cleared architec
 
 | Gap | Why it matters |
 |---|---|
-| Password reset / forgot password | Users locked out permanently if they forget password |
+| Authentication overhaul — migrate to NextAuth/Auth.js | Current custom auth lacks password reset, email verification, rate limiting, and SSO. NextAuth replaces it entirely with these features built in, data stays in D1, free forever, no vendor lock-in |
 | Email notifications — results released, exam scheduled | Platform is completely silent — users have no idea anything happened |
-| Rate limiting on login | Brute force attacks on passwords currently possible |
 | Proper error handling and user-facing error messages | Pages crash on query failures, users do not know what went wrong |
 | Bulk student/member import from CSV | Schools and organisations have existing data — manual entry is not viable at scale |
 
@@ -187,6 +186,55 @@ QAcademy is formal enough for serious exam contexts but simple enough for small 
 The target positioning: **"Run formal exams for any organisation — without the complexity of enterprise platforms or the cost of custom development."**
 
 Moodle — the platform most schools currently use — requires teachers and admins to navigate dozens of nested pages to do basic things. QAcademy's current structure is already significantly better. The platform works correctly and the workflows make sense. The gap between now and a compelling product is closing — not opening.
+
+---
+
+---
+
+## Authentication Strategy
+
+### Decision: NextAuth/Auth.js
+
+After evaluating custom auth improvements, Clerk, Better Auth, and NextAuth, the decision is to migrate to NextAuth/Auth.js.
+
+**Why NextAuth:**
+- Data stays entirely in our own Cloudflare D1 database — no third party stores user data. Important for school trust.
+- Free forever with no organisation or user limits — QAcademy can grow to any scale with zero auth cost
+- Google SSO and Microsoft SSO built in — schools using Google Workspace or Microsoft 365 can log in with existing accounts
+- Password reset, email verification, rate limiting, and session management all built in
+- No vendor lock-in — if NextAuth ever becomes unsuitable, migration is straightforward since data is in our own DB
+- Works on Cloudflare Workers + OpenNext — documented workarounds exist and are solved
+
+**Why not the alternatives:**
+- Clerk — excellent compatibility but auth data lives on Clerk's servers, 100 organisation free tier limit, per-org pricing at scale
+- Better Auth — promising but too new, fewer production examples on this specific stack
+- Custom improvements — builds things NextAuth already provides for free
+
+**The two-table pattern:**
+NextAuth handles identity — who you are (email, password, OAuth tokens, verified status).
+Our existing users table handles platform context — name, is_system_admin, status, memberships, roles, active tenant.
+They link via an `auth_id` foreign key on our users table. This is the same pattern used by Supabase and all major auth services.
+
+**What NextAuth gives us immediately:**
+- Password reset flow
+- Email verification on signup
+- Google SSO
+- Microsoft SSO
+- Rate limiting hooks
+- Session management with revocation
+- Pre-built Next.js integration
+
+**Known considerations:**
+- Requires async `getCloudflareContext` pattern — documented fix exists (OpenNext issue #435, resolved March 2025)
+- Use JWT session strategy in edge contexts, database sessions elsewhere
+- Official D1 adapter: `@auth/d1-adapter` creates 4 tables alongside existing schema
+- Cloudflare has a full tutorial: developers.cloudflare.com/developer-spotlight/tutorials/fullstack-authentication-with-next-js-and-cloudflare-d1/
+
+**When to build:**
+This is the next major piece of work after the current planning and documentation session. It replaces the entire current auth system in `src/lib/auth.ts` and the auth pages in `src/app/(auth)/`. The exam engine, grading, sittings, approval gates, and all other features are unaffected — only the identity and session layer changes.
+
+**Migration note:**
+Current test users can be cleared — there are no real users to preserve. Start fresh with NextAuth.
 
 ---
 

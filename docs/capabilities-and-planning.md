@@ -96,18 +96,20 @@ The two things that would make the biggest difference to real users:
 
 ## Priority Order for Next Development
 
-These are not rigid phases — they will be picked up based on what matters most at the time. But this is the current thinking on order:
+These are not rigid phases — they will shift based on what matters most at the time. But this is the current thinking on order:
 
-1. **Confirm dialogs** — small, high safety value, unblocks destructive action confidence
-2. **Live filtering** — People page and Results tab, immediate UX improvement
-3. **Design polish sprint** — one focused sprint across the whole platform, consistent visual language
-4. **StudentDrawer and TeacherDrawer** — the biggest UX leap, transforms the admin experience
-5. **Drag to reorder questions** — makes the exam builder feel professional
-6. **PWA installability** — adds real-world accessibility for schools
-7. **School identity features** — logo, brand colour, custom domain per school
-8. **Question Bank Bulk Import** — CSV/Excel upload for teachers
-9. **Optimistic UI and loading states** — polish layer after features are stable
-10. **JSON API routes** — when external integration or mobile app becomes relevant
+1. **NextAuth/Auth.js integration** — replace current custom auth with NextAuth. Gives password reset, email verification, Google SSO, Microsoft SSO, rate limiting, and session management in one piece of work. Data stays in D1. This is the foundation everything else builds on.
+2. **Toast notifications** — one component, fixes every page, lowest effort
+3. **Confirm dialogs** — one component, fixes every destructive action
+4. **Design in Figma first** — toast and drawer components designed before building
+5. **StudentDrawer and TeacherDrawer** — largest UX leap, built after Figma designs approved
+6. **Teacher single context experience** — design in Figma first, then build
+7. **Bulk import** — members and questions from CSV/Excel
+8. **Aggregate reporting** — class averages, question performance, cohort comparisons
+9. **Certificates and result documents** — PDF generation on pass
+10. **Design polish sprint** — full platform visual consistency after all features stable
+11. **PWA installability** — desktop and mobile
+12. **School identity features** — logo, brand colour, custom domain
 
 ---
 
