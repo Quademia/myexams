@@ -235,6 +235,42 @@ QAcademy is competing against Moodle — a platform teachers and admins find gen
 
 The design sprint is what takes QAcademy from looking like a project to looking like a product. Introducing Figma for the highest-impact new components now means the design sprint at the end is faster, more consistent, and starts from a stronger foundation.
 
+### Visual inspiration — collecting design references
+
+Before any Figma design session, collect visual references of things that appeal to you. This is called a mood board in the design world and it is how professional designers work. A screenshot communicates design direction instantly and unambiguously — far better than describing it in words.
+
+**The workflow:**
+1. Browse inspiration sites and collect screenshots of things you like
+2. Before a design session, share the screenshots in the planning conversation
+3. Discuss what specifically appeals — is it the colour, the layout, the typography, the spacing?
+4. That discussion becomes the design brief
+5. Claude generates in Figma matching that brief
+6. Compare against your inspiration and give feedback
+
+This approach removes the words problem — "clean and professional" means different things to different people. Showing a screenshot of what clean and professional looks like to you is unambiguous. It also speeds up iteration significantly — instead of Claude guessing and you correcting, Claude matches what you showed from the start.
+
+**Good places to find inspiration for QAcademy:**
+
+For overall platform feel:
+- Dribbble.com — search "school dashboard", "exam platform", "education app", "admin dashboard"
+- Behance.net — same searches, more complete project showcases
+- Mobbin.com — real screenshots from real apps, searchable by category
+
+For specific components:
+- Tables and data displays — search "data table UI", "admin panel design"
+- Teacher experience — search "learning management system UI", "teacher dashboard"
+- Student experience — search "student portal UI", "exam interface"
+- Drawers and panels — search "side panel UI", "drawer component design"
+
+Real products worth studying for inspiration:
+- Linear.app — clean, fast, professional. Good reference for the admin experience
+- Notion.so — excellent typography and spacing principles
+- Vercel dashboard — excellent data display and navigation patterns
+- Stripe dashboard — gold standard for clean data-heavy interfaces
+- Canvas LMS — direct competitor, useful to see what they do well and what to do differently
+
+**Start collecting now.** The design sprint is not immediate but every time you use an app or website and think "I like how that looks" — take a screenshot. By the time the design stage arrives you will have a rich collection without any extra effort.
+
 ---
 
 ## The Single Context Experience — Teacher First
