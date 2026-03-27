@@ -181,3 +181,37 @@ A critical analysis of every page and feature in the app, mapped against the new
 6. Bulk actions — high practical value for schools with many students
 7. Inline editing — makes builders feel fluid
 8. Optimistic UI — polish layer once everything else is stable
+
+---
+
+## The Single Context Experience — Teacher First
+
+### The idea
+
+Rather than a teacher navigating between separate pages — exam list, builder, results, grading, approvals — everything about a teacher's work lives in one screen. A persistent sidebar lists their exams. Clicking an exam loads all context for that exam in the right panel — settings, questions, results, grading, approvals — without ever leaving the page. The URL updates so links still work, but the sidebar never disappears and the page never reloads.
+
+This is not about adding features. Everything a teacher can do today they can still do. It is about removing the friction of constant navigation and making the platform feel like purpose-built professional software rather than a collection of pages.
+
+### Why teacher first
+
+The teacher's world is focused on one thing — their exams. That makes it the cleanest place in the whole app to implement this pattern. Smaller scope, lower risk, clear success metric: does a teacher feel like they never need to leave the page?
+
+If the teacher experience proves the concept, the same pattern expands naturally to school admin — a persistent sidebar for the main sections (Courses, Classes, People, Sittings, Join Codes), right panel loading context. All components built for the teacher experience (StudentDrawer, TeacherDrawer) drop straight into the admin experience with no rework.
+
+### The progression
+
+1. Teacher single context experience — proves the pattern
+2. StudentDrawer and TeacherDrawer — built as part of teacher, reused everywhere
+3. School admin single context experience — same pattern, broader scope
+
+### Why this matters for QAcademy specifically
+
+Moodle — the platform most schools are currently using — requires teachers and admins to navigate dozens of nested pages to do basic things. Settings buried three levels deep. Navigation that requires training. Teachers dread it.
+
+QAcademy's current structure is already significantly better than that. Every role has a clear dashboard. Every action is reachable in two or three clicks. The mental model is simple. That is not a small thing — it is the core of the market positioning.
+
+The single context experience takes something already genuinely good and makes it exceptional. It is not fixing something broken. It is the difference between a school saying "this is adequate" and "this is impressive."
+
+### When to build it
+
+Not immediately — the right sequence is to complete the quick wins first (toasts, confirm dialogs, design polish) so the platform looks and feels like a product. Then the single context teacher experience becomes the flagship feature that demonstrates what the stack can really do. By that point real teacher feedback will also inform exactly how to design it.
