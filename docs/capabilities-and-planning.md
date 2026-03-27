@@ -114,3 +114,70 @@ These are not rigid phases — they will be picked up based on what matters most
 ## Key Principle
 
 *Build features correctly first. Design makes it look better — React makes complex interactions smoother. Both matter, but in that order.*
+
+---
+
+## Feature Opportunity Analysis
+
+A critical analysis of every page and feature in the app, mapped against the new stack capabilities available to us. Ratings: H = High benefit, M = Medium benefit, L = Low benefit, — = Not applicable.
+
+| Page / Feature | Drawer | Inline Rows | Toast | Live Filter | Confirm Dialog | Inline Edit | Bulk Actions | Optimistic UI |
+|---|---|---|---|---|---|---|---|---|
+| `/school` — Overview | — | — | — | — | — | — | — | — |
+| `/school-courses` — List | — | — | H | — | — | — | — | — |
+| `/school-course` — Teachers tab | H — click teacher opens TeacherDrawer | — | H | — | H — unassign | M — edit inline | — | M |
+| `/school-course` — Students tab | H — click student opens StudentDrawer | — | H | M — filter by name | H — unenrol | — | H — bulk unenrol | M |
+| `/school-course` — Classes tab | — | M — expand class to see students | H | — | H — unenrol class | — | — | M |
+| `/school-course` — Join Codes tab | — | M — expand code to see uses | H | — | H — revoke | — | — | — |
+| `/school-classes` — List | — | — | H | — | — | — | — | — |
+| `/school-class` — Students tab | H — click student opens StudentDrawer | — | H | M — filter by name | H — remove | — | H — bulk remove | M |
+| `/school-class` — Courses tab | — | M — expand course to see enrolment | H | — | H — unenrol course | — | — | M |
+| `/school-people` — Members tab | H — click anyone opens PersonDrawer | — | H | Already exists | H — remove | — | H — bulk role change, bulk remove | M |
+| `/school-people` — Add Person tab | — | — | H — "Person added" | — | — | — | — | — |
+| `/school-join-codes` | — | M — expand code details | H | M — filter by type | H — revoke | — | — | — |
+| `/school-sittings` — List | — | M — expand sitting summary | H | — | H — delete sitting | M — edit title inline | — | — |
+| `/sitting-builder` — Settings tab | — | — | H — "Settings saved" | — | — | M — inline field edits | — | M |
+| `/sitting-builder` — Papers tab | — | H — expand paper to see gate status | H | — | H — remove paper | — | — | M |
+| `/sitting-builder` — Results tab | H — click student opens StudentDrawer | M — expand student row per paper | — | H — filter by student/paper | — | — | — | — |
+| `/sitting-gate-settings` | — | — | H | — | H — remove approver | — | — | M |
+| `/approvals` — Inbox | H — click exam opens ExamDrawer | — | H | — | — | — | — | H — approve feels instant |
+| `/teacher` — Dashboard | H — click exam opens ExamPanel | — | H | M — filter by status | — | — | — | — |
+| `/exam-builder` — Settings tab | — | — | H — "Settings saved" | — | — | H — inline field edits | — | M |
+| `/exam-builder` — Questions tab | — | — | H | — | H — delete question | Already client-side | — | — |
+| `/exam-builder` — Access tab | H — click student opens StudentDrawer | — | H | M | H — remove access | — | H — bulk add by class | M |
+| `/exam-builder` — Results tab | H — click student opens StudentDrawer | M — expand attempt inline | H | Already exists | — | — | H — bulk export selected | M |
+| `/exam-builder` — Approvals tab | — | M — expand gate status | H | — | — | — | — | H — submit for approval |
+| `/exam-preview` | — | — | — | — | — | — | — | — |
+| `/exam-grade` | — | — | H — "Grades saved" | — | — | Already client-side | — | Already client-side |
+| `/exam-bank-picker` | — | M — expand question preview | H | Already exists | — | — | H — select multiple to add | — |
+| `/question-bank` | — | M — expand question preview inline | H | Already exists | H — delete question | M — inline edit | H — bulk delete, bulk share | — |
+| `/student` — Dashboard | — | M — expand sitting results | — | — | — | — | — | — |
+| `/attempt-start` | — | — | — | — | — | — | — | — |
+| `/attempt-take` | — | — | — | — | — | — | — | Already client-side |
+| `/attempt-complete` | — | — | — | — | — | — | — | — |
+| `/attempt-results` | — | — | — | — | — | — | — | — |
+| `/attempt-review` | — | M — expand question feedback | — | — | — | — | — | — |
+| `/sitting-results` | — | M — expand paper detail | — | — | — | — | — | — |
+| `/sys` | — | M — expand user memberships | H | M — already has search | — | — | — | — |
+| `/profile` | — | — | H — "Password changed" | — | — | — | — | — |
+
+---
+
+## Key Patterns From The Analysis
+
+**Toast notifications** affect almost every single page. The easiest win on the entire list. One `Toast` component built once, used everywhere. Currently the platform is completely silent after every action.
+
+**Confirm dialogs** affect every destructive action across 15+ pages. Currently everything deletes and removes immediately with no warning. One `ConfirmButton` component fixes all of them.
+
+**StudentDrawer** appears on 7 different pages. Build it once and it transforms the experience on People, Course detail, Class detail, Results, Sitting builder results, and Exam access.
+
+**Recommended build sequence based on impact vs effort:**
+
+1. Toast notifications — one component, fixes every page, lowest effort
+2. Confirm dialogs — one component, fixes every destructive action, low effort
+3. StudentDrawer — larger build, highest single-component impact
+4. TeacherDrawer — natural follow-on to StudentDrawer
+5. Inline expanding rows — targeted additions per page after drawers exist
+6. Bulk actions — high practical value for schools with many students
+7. Inline editing — makes builders feel fluid
+8. Optimistic UI — polish layer once everything else is stable
