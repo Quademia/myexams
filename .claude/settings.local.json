@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv teacher:*)",
+      "Bash(mv student:*)",
+      "Bash(mv sitting-results:*)",
+      "Bash(mkdir -p ui layout exam bank filters drawers)",
+      "Bash(mv Card.tsx TabNav.tsx DataTable.tsx PageHeader.tsx ui/)",
+      "Bash(mv SchoolLayout.tsx layout/)",
+      "Bash(mv ExamEngine.tsx GradingEngine.tsx GradeBandsEditor.tsx CustomFieldsEditor.tsx QuestionForm.tsx QuestionFormFields.tsx PreviewToggle.tsx ResultsTable.tsx exam/)",
+      "Bash(mv BankQuestionForm.tsx BankQuestionFormFields.tsx bank/)",
+      "Bash(xargs sed:*)",
+      "Bash(npm run:*)"
+    ]
+  }
+}
