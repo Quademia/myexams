@@ -184,6 +184,59 @@ A critical analysis of every page and feature in the app, mapped against the new
 
 ---
 
+## Figma — Design Strategy
+
+### What Figma is for this project
+
+Figma is a visual planning tool. It lets us see exactly how a page or component will look — colours, layout, typography, spacing, interactive states — before any code is written. Changes are instant and visual. Designs are shareable via a link — no installation needed to view.
+
+For QAcademy, Claude uses the Figma MCP connector to generate designs programmatically. The workflow is:
+
+1. Describe what is needed in plain English
+2. Claude generates the design directly in Figma
+3. Review it visually — click around, share with others for feedback
+4. Give feedback in plain English
+5. Claude updates the design
+6. Once approved, Claude builds it in code from the approved design
+
+No Figma skills required. Just describing and approving.
+
+---
+
+### The revised approach — selective and strategic
+
+The original plan was to build all logic first and do one design sprint at the end. That remains correct for behaviour-focused features. But for highly visual new components — toasts, drawers, the teacher single context experience — designing in Figma first makes more sense. Building a drawer without a design reference means making visual decisions blindly and potentially redesigning it later. That is doing work twice.
+
+The approach is now:
+
+**Design in Figma first:**
+- Toast notification component — how it looks, where it appears, success/error/info/warning states
+- Drawer component shell — how it opens, closes, header structure, width, overlay
+- Teacher single context experience — significant layout change, must be seen visually before committing to build
+- Any other new component where the visual design is as important as the behaviour
+
+**Build without Figma first:**
+- Confirm dialogs — straightforward behaviour, design later
+- Live filtering — behaviour focused, design later
+- Bulk actions — behaviour focused, design later
+- Any feature where the logic is the primary concern
+
+**Full design sprint at the end:**
+- Go through every existing page and apply the design system consistently
+- Establish the full design system first: colour palette, typography, spacing, component states
+- Design one reference page fully, extract the rules, apply everywhere else
+- By this point toasts, drawers and the teacher experience will already be designed — half the work is done
+
+---
+
+### Why this matters for QAcademy specifically
+
+QAcademy is competing against Moodle — a platform teachers and admins find genuinely painful to use. The logic and structure of QAcademy is already significantly better. But the first impression when a school evaluates software matters enormously. A platform that works correctly but looks unfinished will lose to a polished competitor even if the competitor is harder to use.
+
+The design sprint is what takes QAcademy from looking like a project to looking like a product. Introducing Figma for the highest-impact new components now means the design sprint at the end is faster, more consistent, and starts from a stronger foundation.
+
+---
+
 ## The Single Context Experience — Teacher First
 
 ### The idea
