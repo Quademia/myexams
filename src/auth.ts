@@ -116,10 +116,12 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
       }),
 
       // 3. Microsoft Entra ID (Azure AD) OAuth.
+      //    The issuer URL includes the tenant ID — this tells NextAuth which
+      //    Azure AD directory to authenticate against.
       MicrosoftEntraId({
         clientId: env.AUTH_MICROSOFT_ENTRA_ID_ID,
         clientSecret: env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
-        tenantId: env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID,
+        issuer: `https://login.microsoftonline.com/${env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID}/v2.0`,
       }),
     ],
 
