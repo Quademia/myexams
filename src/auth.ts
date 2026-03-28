@@ -135,6 +135,12 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
     // in your Cloudflare Workers environment variables.
     secret: env.AUTH_SECRET,
 
+    // ── Trust Host ────────────────────────────────────────────────────────
+    // On Cloudflare Workers the app runs behind a proxy, so NextAuth can't
+    // auto-detect the host. Without this flag every auth request fails with
+    // "UntrustedHost: Host must be trusted."
+    trustHost: true,
+
     // ── Pages ────────────────────────────────────────────────────────────
     // Tell NextAuth to use our custom login page instead of the default one.
     pages: {
