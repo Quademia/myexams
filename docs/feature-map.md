@@ -104,6 +104,74 @@ Each page section follows this structure:
 
 ---
 
+## Password Reset Flow
+
+**Files:**
+- `src/app/(auth)/forgot-password/page.tsx`
+- `src/app/(auth)/reset-password/page.tsx`
+
+**Who can access:** Public — no session required.
+
+**Purpose:** Allows a user to reset their password via a time-limited, single-use email link.
+
+---
+
+### Forgot Password — `/forgot-password`
+
+**What the user sees:**
+A single email input form. On submit always shows: "If that email is registered you'll receive a reset link shortly." — regardless of whether the email exists (prevents account enumeration).
+
+**Server action logic:**
+1. Look up email in `qa_users` where `status = 'ACTIVE'`
+2. If not found — stop silently, show success message
+3. Rate limit check — if an unused, unexpired, non-invalidated token for this email was created in the last 10 minutes, stop silently
+4. Invalidate any existing unused, non-invalidated tokens for this email — set `invalidated_at = now()`
+5. Generate raw token: `crypto.randomUUID() + crypto.randomUUID()` (no hyphens)
+6. Hash token with SHA-256 via `sha256Hex()` from `src/lib/auth.ts` — store hash in DB, send raw in URL
+7. Insert into `verification_tokens`: identifier=email, token=hash, expires=Unix+3600, created_at, ip_address
+8. Send email via Resend from `noreply@qacademynurses.com` with reset link pointing to `/reset-password?token={raw}&email={encoded}`
+9. Link expires in 1 hour and is single-use only
+
+---
+
+### Reset Password — `/reset-password`
+
+**What the user sees:**
+Receives `?token=&email=` from the email link. Shows a form with new password and confirm password fields. Token and email passed as hidden fields.
+
+**Server action logic:**
+1. Validate passwords match and are 6+ characters
+2. Hash incoming raw token with SHA-256 to get lookup value
+3. Look up `verification_tokens` where `identifier = email AND token = hash`
+4. Validation checks in order:
+   - Not found → "This reset link is invalid."
+   - `used_at IS NOT NULL` → "This reset link has already been used."
+   - `invalidated_at IS NOT NULL` → "This reset link is no longer valid. Please request a new one."
+   - `expires < Math.floor(Date.now() / 1000)` → "This reset link has expired. Please request a new one."
+5. Hash new password: `pbkdf2Hex(password + "|" + APP_SECRET, randomSaltHex(), 40000)`
+6. Update `qa_users`: new password_hash, password_salt, password_iter=40000, updated_at
+7. Mark token as used: `SET used_at = now(), used_ip_address = {ip}`
+8. Redirect to `/login?message=password-reset`
+
+---
+
+### Business rules
+- Token is stored hashed in DB, raw value only ever exists in the email link and the URL — never stored plain
+- One-use enforced via `used_at` — token row is never deleted (kept for audit)
+- Old tokens killed by newer requests via `invalidated_at` — distinguishes "used legitimately" vs "superseded"
+- Rate limit: one token per email per 10 minutes — prevents inbox flooding
+- Account enumeration protection: success message always shown regardless of email existence
+- IP addresses captured at both request time (`ip_address`) and use time (`used_ip_address`) for audit trail
+- `verification_tokens` extra columns (`created_at`, `ip_address`, `used_at`, `used_ip_address`, `invalidated_at`) are QAcademy additions — NextAuth does not touch them
+
+---
+
+### Login page updates
+- "Forgot your password?" link added below the password field → `/forgot-password`
+- Green success banner shown when `?message=password-reset` is in the URL
+
+---
+
 ## School Admin — Dashboard `/school`
 
 **File:** `src/app/school/page.tsx`

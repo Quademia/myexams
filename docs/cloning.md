@@ -126,7 +126,15 @@ CREATE TABLE IF NOT EXISTS verification_tokens (
   identifier TEXT NOT NULL,
   token TEXT NOT NULL,
   expires INTEGER NOT NULL,
-  PRIMARY KEY (identifier, token)
+  PRIMARY KEY (identifier, token),
+  -- The following columns are QAcademy additions — NOT part of the NextAuth schema.
+  -- NextAuth does not know about them and never writes to them.
+  -- All are nullable so NextAuth inserts are unaffected.
+  created_at TEXT,
+  ip_address TEXT,
+  used_at TEXT,
+  used_ip_address TEXT,
+  invalidated_at TEXT
 );
 ```
 
@@ -149,4 +157,4 @@ CREATE TABLE IF NOT EXISTS verification_tokens (
 
 ---
 
-*Last updated: 2026-03-28*
+*Last updated: 2026-03-28 — Password reset flow complete and verified.*

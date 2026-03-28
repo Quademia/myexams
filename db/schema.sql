@@ -477,3 +477,13 @@ CREATE INDEX IF NOT EXISTS idx_exam_answers_question_id ON exam_answers(question
 -- ALTER TABLE enrollments ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE';
 -- ALTER TABLE enrollments ADD COLUMN updated_at TEXT;
 -- UPDATE enrollments SET id = lower(hex(randomblob(16))), tenant_id = (SELECT c.tenant_id FROM courses c WHERE c.id = enrollments.course_id), updated_at = enrollments.created_at WHERE id IS NULL;
+
+-- Password reset audit trail — QAcademy additions to NextAuth's verification_tokens table.
+-- These columns are NOT part of the NextAuth schema. NextAuth does not know about them
+-- and never writes to them. All are nullable so NextAuth inserts are unaffected.
+-- Added manually via D1 query pane 2026-03-28:
+-- ALTER TABLE verification_tokens ADD COLUMN created_at TEXT;
+-- ALTER TABLE verification_tokens ADD COLUMN ip_address TEXT;
+-- ALTER TABLE verification_tokens ADD COLUMN used_at TEXT;
+-- ALTER TABLE verification_tokens ADD COLUMN used_ip_address TEXT;
+-- ALTER TABLE verification_tokens ADD COLUMN invalidated_at TEXT;

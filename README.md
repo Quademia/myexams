@@ -166,7 +166,9 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 | Route | Description | Status |
 |---|---|---|
 | `/` | Smart redirect — role-based routing to correct dashboard | ✅ Verified |
-| `/login` | Email + password + Google SSO + Microsoft SSO | ✅ Verified 2026-03-28 |
+| `/login` | Email + password + Google SSO + Microsoft SSO + "Forgot your password?" link + green success banner on `?message=password-reset` | ✅ Verified 2026-03-28 |
+| `/forgot-password` | Forgot password — enter email, sends reset link via Resend | ✅ Verified 2026-03-28 |
+| `/reset-password` | Reset password — validates token, updates password in `qa_users` | ✅ Verified 2026-03-28 |
 | `/logout` | Destroys NextAuth session, redirect to login | ✅ Verified 2026-03-28 |
 | `/setup` | First-time platform setup — creates System Admin | ✅ Verified 2026-03-26 |
 | `/profile` | View profile, change password | ✅ Verified |
@@ -268,7 +270,7 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 ## What's Next
 
 ### Immediate — Prompt 3
-- Password reset flow — token generated, stored in `verification_tokens`, email sent via Resend, validated on reset page
+- ~~Password reset flow — token generated, stored in `verification_tokens`, email sent via Resend, validated on reset page~~ ✅ Done 2026-03-28
 - Email verification on signup
 
 ### Immediate — Prompt 4
@@ -294,4 +296,4 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 ---
 
-*Last updated: 2026-03-28 — NextAuth v5 auth system complete. Email + password, Google SSO, Microsoft SSO all working in production.*
+*Last updated: 2026-03-28 — Password reset flow complete and verified.*
