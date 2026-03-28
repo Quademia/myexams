@@ -7,6 +7,13 @@ if (process.env.NODE_ENV === "development") {
   initOpenNextCloudflareForDev();
 }
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  // Ensure NextAuth's catch-all API route is never statically optimized.
+  // The [...nextauth] route must run dynamically on every request because it
+  // handles sign-in, callbacks, CSRF tokens, etc.
+  // serverExternalPackages tells Next.js not to bundle these — they need
+  // native/runtime resolution on Cloudflare Workers.
+  serverExternalPackages: ["next-auth", "@auth/d1-adapter"],
+};
 
 export default nextConfig;
