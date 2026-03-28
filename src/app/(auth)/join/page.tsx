@@ -65,7 +65,7 @@ async function joinLoginAction(formData: FormData) {
 
   const u = await first<{
     id: string; password_salt: string; password_hash: string; password_iter: number;
-  }>("SELECT id, password_salt, password_hash, password_iter FROM users WHERE email=? AND status='ACTIVE'", [email]);
+  }>("SELECT id, password_salt, password_hash, password_iter FROM qa_users WHERE email=? AND status='ACTIVE'", [email]);
   if (!u) redirect(`/join?code=${encodeURIComponent(codePlain)}&error=Wrong+email+or+password`);
 
   const check = await pbkdf2Hex(password + "|" + APP_SECRET, u.password_salt, Number(u.password_iter));
@@ -120,7 +120,7 @@ async function joinCreateAccountAction(formData: FormData) {
   if (!v.ok || !jc) redirect(`/join?code=${encodeURIComponent(codePlain)}&error=${encodeURIComponent(v.why)}`);
 
   const now = new Date().toISOString();
-  let u = await first<{ id: string }>("SELECT id FROM users WHERE email=? AND status='ACTIVE'", [email]);
+  let u = await first<{ id: string }>("SELECT id FROM qa_users WHERE email=? AND status='ACTIVE'", [email]);
   let userId = u?.id;
 
   if (!userId) {
@@ -129,7 +129,7 @@ async function joinCreateAccountAction(formData: FormData) {
     const hashHex = await pbkdf2Hex(password + "|" + APP_SECRET, saltHex, iter);
     userId = crypto.randomUUID();
     await run(
-      "INSERT INTO users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,0,'ACTIVE',?,?)",
+      "INSERT INTO qa_users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,0,'ACTIVE',?,?)",
       [userId, email, name, saltHex, hashHex, iter, now, now]
     );
   }

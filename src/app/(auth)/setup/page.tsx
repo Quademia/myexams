@@ -27,7 +27,7 @@ async function setupAction(formData: FormData) {
 
   // Safety guard: if someone already exists, don't create another admin.
   // This protects against race conditions (two people submitting at once).
-  const row = await first<{ n: number }>("SELECT COUNT(*) AS n FROM users");
+  const row = await first<{ n: number }>("SELECT COUNT(*) AS n FROM qa_users");
   if (row && row.n > 0) {
     redirect("/login");
   }
@@ -54,7 +54,7 @@ async function setupAction(formData: FormData) {
 
   // Insert the System Admin user.
   await run(
-    "INSERT INTO users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,1,'ACTIVE',?,?)",
+    "INSERT INTO qa_users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,1,'ACTIVE',?,?)",
     [id, email, name, saltHex, hashHex, iter, now, now]
   );
 
@@ -75,7 +75,7 @@ export default async function SetupPage({
   const { first } = getDb();
 
   // Check if any users already exist.
-  const row = await first<{ n: number }>("SELECT COUNT(*) AS n FROM users");
+  const row = await first<{ n: number }>("SELECT COUNT(*) AS n FROM qa_users");
   const userCount = row?.n ?? 0;
 
   // If users exist, setup is already done — show a simple message.

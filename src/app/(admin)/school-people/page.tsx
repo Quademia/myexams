@@ -76,7 +76,7 @@ async function checkEmailAction(formData: FormData) {
 
   const { first } = getDb();
   const u = await first<{ id: string; name: string }>(
-    "SELECT id, name FROM users WHERE email=? AND status='ACTIVE'", [email]
+    "SELECT id, name FROM qa_users WHERE email=? AND status='ACTIVE'", [email]
   );
 
   if (u) {
@@ -96,7 +96,7 @@ async function addExistingUserAction(formData: FormData) {
   if (!email || !["STUDENT", "TEACHER", "SCHOOL_ADMIN"].includes(role)) redirect("/school-people?tab=add");
 
   const { first, run } = getDb();
-  const u = await first<{ id: string }>("SELECT id FROM users WHERE email=? AND status='ACTIVE'", [email]);
+  const u = await first<{ id: string }>("SELECT id FROM qa_users WHERE email=? AND status='ACTIVE'", [email]);
   if (!u) redirect("/school-people?tab=add");
 
   const now = new Date().toISOString();
@@ -133,7 +133,7 @@ async function addNewUserAction(formData: FormData) {
   const now = new Date().toISOString();
 
   // Create user if not exists.
-  let u = await first<{ id: string }>("SELECT id FROM users WHERE email=? AND status='ACTIVE'", [email]);
+  let u = await first<{ id: string }>("SELECT id FROM qa_users WHERE email=? AND status='ACTIVE'", [email]);
   let userId = u?.id;
   if (!userId) {
     const saltHex = randomSaltHex();
@@ -141,7 +141,7 @@ async function addNewUserAction(formData: FormData) {
     const hashHex = await pbkdf2Hex(password + "|" + APP_SECRET, saltHex, iter);
     userId = crypto.randomUUID();
     await run(
-      "INSERT INTO users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,0,'ACTIVE',?,?)",
+      "INSERT INTO qa_users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,0,'ACTIVE',?,?)",
       [userId, email, name, saltHex, hashHex, iter, now, now]
     );
   }
@@ -225,7 +225,7 @@ async function MembersTab({
 
   // Build filtered query dynamically.
   let sql = `SELECT DISTINCT u.id, u.name, u.email, m.role
-             FROM memberships m JOIN users u ON u.id=m.user_id
+             FROM memberships m JOIN qa_users u ON u.id=m.user_id
              WHERE m.tenant_id=? AND m.status='ACTIVE' AND u.status='ACTIVE'`;
   const sqlParams: unknown[] = [tenantId];
 

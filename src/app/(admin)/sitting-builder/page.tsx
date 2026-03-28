@@ -259,7 +259,7 @@ async function PapersTab({ sittingId, tenantId }: { sittingId: string; tenantId:
      FROM exam_sitting_papers esp
      JOIN exams e ON e.id = esp.exam_id
      JOIN courses c ON c.id = e.course_id
-     LEFT JOIN users u ON u.id = e.created_by
+     LEFT JOIN qa_users u ON u.id = e.created_by
      WHERE esp.sitting_id=?
      ORDER BY esp.sort_order ASC`,
     [sittingId]
@@ -312,7 +312,7 @@ async function PapersTab({ sittingId, tenantId }: { sittingId: string; tenantId:
   const teachers = await all<{ id: string; name: string }>(
     `SELECT DISTINCT u.id, u.name
      FROM memberships m
-     JOIN users u ON u.id = m.user_id
+     JOIN qa_users u ON u.id = m.user_id
      WHERE m.tenant_id=? AND m.role='TEACHER' AND m.status='ACTIVE'
      ORDER BY u.name ASC`,
     [tenantId]
@@ -489,7 +489,7 @@ async function ResultsTab({ sittingId, tenantId }: { sittingId: string; tenantId
 
   const studentList = await all<{ id: string; name: string }>(
     `SELECT DISTINCT u.id, u.name
-     FROM exam_attempts ea JOIN users u ON u.id = ea.user_id
+     FROM exam_attempts ea JOIN qa_users u ON u.id = ea.user_id
      WHERE ea.exam_id IN (${ph}) AND ea.tenant_id=? AND ea.status='SUBMITTED'
      ORDER BY u.name ASC`,
     [...pIds, tenantId]

@@ -124,7 +124,7 @@ export async function getAuth(): Promise<AuthResult> {
 
   // Load the user.
   const user = await first<User>(
-    "SELECT id, email, name, is_system_admin FROM users WHERE id=? AND status='ACTIVE'",
+    "SELECT id, email, name, is_system_admin FROM qa_users WHERE id=? AND status='ACTIVE'",
     [session.user_id]
   );
   if (!user) return empty;

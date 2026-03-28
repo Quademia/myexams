@@ -12,7 +12,7 @@
 // USAGE EXAMPLE:
 //   import { getDb } from "@/lib/db";
 //   const { first, all, run } = getDb();
-//   const user = await first("SELECT * FROM users WHERE id=?", ["abc"]);
+//   const user = await first("SELECT * FROM qa_users WHERE id=?", ["abc"]);
 
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
@@ -28,7 +28,7 @@ export function getDb() {
   const db = getD1();
 
   // Run a query and return the first matching row, or null if none found.
-  // Example: const user = await first("SELECT * FROM users WHERE email=?", ["sam@test.com"]);
+  // Example: const user = await first("SELECT * FROM qa_users WHERE email=?", ["sam@test.com"]);
   const first = async <T = Record<string, unknown>>(
     sql: string,
     params: unknown[] = []

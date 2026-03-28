@@ -372,7 +372,7 @@ async function TeachersTab({ courseId, tenantId }: { courseId: string; tenantId:
 
   const assigned = await all<{ id: string; name: string; email: string }>(
     `SELECT u.id, u.name, u.email FROM course_teachers ct
-     JOIN users u ON u.id = ct.user_id
+     JOIN qa_users u ON u.id = ct.user_id
      WHERE ct.course_id=? ORDER BY u.name ASC`,
     [courseId]
   );
@@ -380,7 +380,7 @@ async function TeachersTab({ courseId, tenantId }: { courseId: string; tenantId:
   // Include SCHOOL_ADMIN too — they can also teach courses.
   const allTeachers = await all<{ id: string; name: string; email: string }>(
     `SELECT u.id, u.name, u.email FROM memberships m
-     JOIN users u ON u.id = m.user_id
+     JOIN qa_users u ON u.id = m.user_id
      WHERE m.tenant_id=? AND m.role IN ('TEACHER','SCHOOL_ADMIN') AND m.status='ACTIVE' AND u.status='ACTIVE'
      ORDER BY u.name ASC`,
     [tenantId]
@@ -437,14 +437,14 @@ async function StudentsTab({ courseId, tenantId }: { courseId: string; tenantId:
 
   const enrolled = await all<{ id: string; name: string; email: string }>(
     `SELECT u.id, u.name, u.email FROM enrollments e
-     JOIN users u ON u.id = e.user_id
+     JOIN qa_users u ON u.id = e.user_id
      WHERE e.course_id=? ORDER BY u.name ASC`,
     [courseId]
   );
 
   const allStudents = await all<{ id: string; name: string; email: string }>(
     `SELECT u.id, u.name, u.email FROM memberships m
-     JOIN users u ON u.id = m.user_id
+     JOIN qa_users u ON u.id = m.user_id
      WHERE m.tenant_id=? AND m.role='STUDENT' AND m.status='ACTIVE' AND u.status='ACTIVE'
      ORDER BY u.name ASC`,
     [tenantId]

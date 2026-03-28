@@ -45,7 +45,7 @@ async function createSchoolAction(formData: FormData) {
 
   // Check if admin email already exists.
   const existing = await first<{ id: string }>(
-    "SELECT id FROM users WHERE email=? AND status='ACTIVE'",
+    "SELECT id FROM qa_users WHERE email=? AND status='ACTIVE'",
     [adminEmail]
   );
 
@@ -58,7 +58,7 @@ async function createSchoolAction(formData: FormData) {
     const hashHex = await pbkdf2Hex(adminPassword + "|" + APP_SECRET, saltHex, iter);
     userId = crypto.randomUUID();
     await run(
-      "INSERT INTO users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,0,'ACTIVE',?,?)",
+      "INSERT INTO qa_users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,0,'ACTIVE',?,?)",
       [userId, adminEmail, adminName, saltHex, hashHex, iter, now, now]
     );
   }
@@ -103,7 +103,7 @@ async function addMemberAction(formData: FormData) {
   const now = new Date().toISOString();
 
   // Verify user and tenant exist.
-  const u = await first("SELECT id FROM users WHERE id=? AND status='ACTIVE'", [userId]);
+  const u = await first("SELECT id FROM qa_users WHERE id=? AND status='ACTIVE'", [userId]);
   const t = await first("SELECT id FROM tenants WHERE id=? AND status='ACTIVE'", [tenantId]);
   if (!u || !t) redirect("/sys");
 
@@ -159,7 +159,7 @@ export default async function SysPage({
     const users = await all<{
       id: string; email: string; name: string; is_system_admin: number; status: string;
     }>(
-      "SELECT id, email, name, is_system_admin, status FROM users WHERE lower(email) LIKE ? ORDER BY email ASC LIMIT 25",
+      "SELECT id, email, name, is_system_admin, status FROM qa_users WHERE lower(email) LIKE ? ORDER BY email ASC LIMIT 25",
       [`%${q}%`]
     );
 

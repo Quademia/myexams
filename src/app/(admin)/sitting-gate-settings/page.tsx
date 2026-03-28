@@ -149,7 +149,7 @@ export default async function SittingGateSettingsPage({
      FROM exam_sitting_papers esp
      JOIN exams e ON e.id = esp.exam_id
      JOIN courses c ON c.id = e.course_id
-     LEFT JOIN users u ON u.id = e.created_by
+     LEFT JOIN qa_users u ON u.id = e.created_by
      WHERE esp.sitting_id=? AND esp.exam_id=?`,
     [sittingId, examId]
   );
@@ -158,7 +158,7 @@ export default async function SittingGateSettingsPage({
   // Load assigned gates.
   const assignedGates = await all<{ gate_type: string; user_id: string; approver_name: string }>(
     `SELECT sag.gate_type, sag.user_id, u.name AS approver_name
-     FROM sitting_approval_gates sag JOIN users u ON u.id = sag.user_id
+     FROM sitting_approval_gates sag JOIN qa_users u ON u.id = sag.user_id
      WHERE sag.exam_id=? AND sag.tenant_id=?
      ORDER BY sag.gate_type, u.name ASC`,
     [examId, active.tenant_id]
@@ -171,7 +171,7 @@ export default async function SittingGateSettingsPage({
 
   // All school members for the "add approver" dropdowns.
   const allMembers = await all<{ id: string; name: string; role: string }>(
-    `SELECT u.id, u.name, m.role FROM memberships m JOIN users u ON u.id = m.user_id
+    `SELECT u.id, u.name, m.role FROM memberships m JOIN qa_users u ON u.id = m.user_id
      WHERE m.tenant_id=? AND m.status='ACTIVE' AND u.status='ACTIVE'
      ORDER BY u.name ASC`,
     [active.tenant_id]

@@ -143,7 +143,7 @@ export default async function AttemptResultsPage({
 
   // Load student name
   const studentRow = await first<{ name: string }>(
-    `SELECT name FROM users WHERE id=?`,
+    `SELECT name FROM qa_users WHERE id=?`,
     [attempt.user_id]
   );
   const studentName = studentRow?.name || "Unknown";

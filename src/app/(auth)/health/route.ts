@@ -13,7 +13,7 @@ export async function GET() {
   try {
     const start = Date.now();
     const { first } = getDb();
-    const row = await first<{ n: number }>("SELECT COUNT(*) AS n FROM users");
+    const row = await first<{ n: number }>("SELECT COUNT(*) AS n FROM qa_users");
     const response_time_ms = Date.now() - start;
     return Response.json({
       status: "ok",

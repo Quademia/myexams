@@ -200,7 +200,7 @@ export default async function ExamGradePage({
        ea.grading_status, ea.score_raw, ea.score_total, ea.score_pct,
        ea.grade, ea.pass_mark_percent, ea.submitted_at, ea.grade_bands_json
      FROM exam_attempts ea
-     JOIN users u ON u.id = ea.user_id
+     JOIN qa_users u ON u.id = ea.user_id
      WHERE ea.id=? AND ea.exam_id=? AND ea.tenant_id=? AND ea.status='SUBMITTED'`,
     [attemptId, examId, tid]
   );
@@ -270,7 +270,7 @@ export default async function ExamGradePage({
       gateDecision = await first<{ status: string; note: string | null; approver_name: string }>(
         `SELECT sar.status, sar.note, u.name AS approver_name
          FROM sitting_approval_responses sar
-         JOIN users u ON u.id = sar.approver_id
+         JOIN qa_users u ON u.id = sar.approver_id
          WHERE sar.exam_id=? AND sar.gate_type='GRADING' AND sar.tenant_id=?
          AND sar.status IN ('APPROVED','REJECTED')
          LIMIT 1`,
@@ -292,7 +292,7 @@ export default async function ExamGradePage({
     otherApproverComments = await all<{ question_id: string; comment: string; approver_name: string }>(
       `SELECT sac.question_id, sac.comment, u.name AS approver_name
        FROM sitting_approval_comments sac
-       JOIN users u ON u.id = sac.approver_id
+       JOIN qa_users u ON u.id = sac.approver_id
        WHERE sac.exam_id=? AND sac.gate_type='GRADING' AND sac.attempt_id=? AND sac.tenant_id=?
        ORDER BY sac.created_at ASC`,
       [examId, attemptId, tid]

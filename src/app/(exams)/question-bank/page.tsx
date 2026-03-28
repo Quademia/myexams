@@ -243,7 +243,7 @@ export default async function QuestionBankPage({
                       qb.partial_marking, qb.model_answer, qb.feedback, qb.created_by,
                       qb.created_at, qb.updated_at, u.name AS creator_name
                FROM question_bank qb
-               JOIN users u ON u.id = qb.created_by
+               JOIN qa_users u ON u.id = qb.created_by
                WHERE qb.tenant_id=? AND (qb.created_by=? OR qb.visibility='SCHOOL')`;
   const queryParams: (string | number)[] = [tid, userId];
 

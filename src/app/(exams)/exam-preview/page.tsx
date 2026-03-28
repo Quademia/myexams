@@ -202,7 +202,7 @@ export default async function ExamPreviewPage({
 
     const allComments = await all<{ question_id: string; approver_id: string; comment: string; approver_name: string }>(
       `SELECT sac.question_id, sac.approver_id, sac.comment, u.name AS approver_name
-       FROM sitting_approval_comments sac JOIN users u ON u.id = sac.approver_id
+       FROM sitting_approval_comments sac JOIN qa_users u ON u.id = sac.approver_id
        WHERE sac.exam_id=? AND sac.gate_type=? AND sac.tenant_id=?
        ORDER BY sac.created_at ASC`,
       [examId, approverGateType, tenantId]
@@ -215,7 +215,7 @@ export default async function ExamPreviewPage({
   } else if (!isApproverMode && tenantId && active && (active.role === "SCHOOL_ADMIN" || active.role === "TEACHER")) {
     const allComments = await all<{ question_id: string; comment: string; approver_name: string; gate_type: string }>(
       `SELECT sac.question_id, sac.gate_type, sac.comment, u.name AS approver_name
-       FROM sitting_approval_comments sac JOIN users u ON u.id = sac.approver_id
+       FROM sitting_approval_comments sac JOIN qa_users u ON u.id = sac.approver_id
        WHERE sac.exam_id=? AND sac.tenant_id=?
        ORDER BY sac.gate_type ASC, sac.created_at ASC`,
       [examId, tenantId]

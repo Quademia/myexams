@@ -43,7 +43,7 @@ async function loginAction(formData: FormData) {
     password_iter: number;
     is_system_admin: number;
   }>(
-    "SELECT id, email, name, password_salt, password_hash, password_iter, is_system_admin FROM users WHERE email=? AND status='ACTIVE'",
+    "SELECT id, email, name, password_salt, password_hash, password_iter, is_system_admin FROM qa_users WHERE email=? AND status='ACTIVE'",
     [email]
   );
 

@@ -1351,7 +1351,7 @@ async function AccessTab({ examId, courseId, tenantId, examStatus }: { examId: s
     id: string; user_id: string; student_name: string; student_email: string;
   }>(
     `SELECT ea.id, ea.user_id, u.name AS student_name, u.email AS student_email
-     FROM exam_access ea JOIN users u ON u.id = ea.user_id
+     FROM exam_access ea JOIN qa_users u ON u.id = ea.user_id
      WHERE ea.exam_id=? ORDER BY u.name ASC`,
     [examId]
   );
@@ -1361,7 +1361,7 @@ async function AccessTab({ examId, courseId, tenantId, examStatus }: { examId: s
   );
 
   const availableStudents = await all<{ id: string; name: string; email: string }>(
-    `SELECT u.id, u.name, u.email FROM users u
+    `SELECT u.id, u.name, u.email FROM qa_users u
      JOIN memberships m ON m.user_id=u.id AND m.tenant_id=? AND m.role='STUDENT' AND m.status='ACTIVE'
      WHERE u.id NOT IN (SELECT user_id FROM exam_access WHERE exam_id=?)
      ORDER BY u.name ASC`,
@@ -1470,7 +1470,7 @@ async function ResultsTab({ examId, tenantId, resultsPublished, maxAttempts, pas
          ea.grade, ea.pass_mark_percent, ea.started_at, ea.submitted_at,
          ea.time_taken_secs, ea.custom_fields_json
        FROM exam_attempts ea
-       JOIN users u ON u.id = ea.user_id
+       JOIN qa_users u ON u.id = ea.user_id
        WHERE ea.exam_id=? AND ea.tenant_id=? AND ea.status='SUBMITTED'
        ORDER BY u.name ASC, ea.attempt_no ASC`,
       [examId, tenantId]
@@ -1599,7 +1599,7 @@ async function ApprovalsTab({ examId, tenantId, userRole }: { examId: string; te
   // Load all gates and responses for this exam.
   const allGates = await all<{ gate_type: string; user_id: string; approver_name: string }>(
     `SELECT sag.gate_type, sag.user_id, u.name AS approver_name
-     FROM sitting_approval_gates sag JOIN users u ON u.id = sag.user_id
+     FROM sitting_approval_gates sag JOIN qa_users u ON u.id = sag.user_id
      WHERE sag.exam_id=? AND sag.tenant_id=?
      ORDER BY sag.gate_type, u.name ASC`,
     [examId, tenantId]

@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
        ea.grade, ea.pass_mark_percent, ea.time_taken_secs, ea.submitted_at,
        ea.custom_fields_json
      FROM exam_attempts ea
-     JOIN users u ON u.id = ea.user_id
+     JOIN qa_users u ON u.id = ea.user_id
      WHERE ea.exam_id=? AND ea.tenant_id=? AND ea.status='SUBMITTED'
      ORDER BY u.name ASC, ea.attempt_no ASC`,
     [examId, tid]

@@ -165,9 +165,9 @@ export default async function ExamBankPickerPage({
   );
   const addedIds = new Set(alreadyAdded.map((r) => r.bank_question_id));
 
-  // Load bank questions — teachers see their own + school-shared. JOIN users for creator name.
+  // Load bank questions — teachers see their own + school-shared. JOIN qa_users for creator name.
   let query = `SELECT qb.id, qb.question_type, qb.question_text, qb.marks, qb.visibility, qb.created_by, u.name AS creator_name
-               FROM question_bank qb JOIN users u ON u.id = qb.created_by
+               FROM question_bank qb JOIN qa_users u ON u.id = qb.created_by
                WHERE qb.tenant_id=? AND (qb.created_by=? OR qb.visibility='SCHOOL')`;
   const queryParams: (string | number)[] = [active.tenant_id, userId];
 

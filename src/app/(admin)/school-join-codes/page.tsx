@@ -321,7 +321,7 @@ export default async function SchoolJoinCodesPage({
     }>(
       `SELECT jr.id, jr.type, jr.requested_role, jr.created_at,
          u.name AS user_name, u.email AS user_email, c.title AS course_title
-       FROM join_requests jr JOIN users u ON u.id=jr.user_id LEFT JOIN courses c ON c.id=jr.course_id
+       FROM join_requests jr JOIN qa_users u ON u.id=jr.user_id LEFT JOIN courses c ON c.id=jr.course_id
        WHERE jr.tenant_id=? AND jr.status='PENDING' ORDER BY jr.created_at DESC`, [tid]
     ),
     all<{
@@ -330,7 +330,7 @@ export default async function SchoolJoinCodesPage({
     }>(
       `SELECT jr.id, u.name AS user_name, u.email AS user_email, jr.requested_role,
          c.title AS course_title, jr.status, jr.reviewed_at
-       FROM join_requests jr JOIN users u ON u.id=jr.user_id LEFT JOIN courses c ON c.id=jr.course_id
+       FROM join_requests jr JOIN qa_users u ON u.id=jr.user_id LEFT JOIN courses c ON c.id=jr.course_id
        WHERE jr.tenant_id=? AND jr.status IN ('APPROVED','REJECTED')
        ORDER BY jr.reviewed_at DESC LIMIT 50`, [tid]
     ),

@@ -84,7 +84,7 @@ export default async function ApprovalsPage() {
         AND sar.approver_id=sag.user_id AND sar.tenant_id=sag.tenant_id
        JOIN exams e ON e.id=sag.exam_id
        LEFT JOIN exam_sittings es ON es.id=sag.sitting_id
-       LEFT JOIN users u ON u.id=e.created_by
+       LEFT JOIN qa_users u ON u.id=e.created_by
        WHERE sag.user_id=? AND sag.tenant_id=? AND sar.status='PENDING'
        ORDER BY sar.created_at ASC`,
       [userId, tid]

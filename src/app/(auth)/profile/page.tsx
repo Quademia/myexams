@@ -22,7 +22,7 @@ async function changePasswordAction(formData: FormData) {
   const { APP_SECRET } = getEnv();
 
   const u = await first<{ id: string; password_salt: string; password_hash: string; password_iter: number }>(
-    "SELECT id, password_salt, password_hash, password_iter FROM users WHERE id=? AND status='ACTIVE'",
+    "SELECT id, password_salt, password_hash, password_iter FROM qa_users WHERE id=? AND status='ACTIVE'",
     [auth.user!.id]
   );
   if (!u) redirect("/logout");
@@ -33,7 +33,7 @@ async function changePasswordAction(formData: FormData) {
   const saltHex = randomSaltHex();
   const iter = 40000;
   const hashHex = await pbkdf2Hex(newPw + "|" + APP_SECRET, saltHex, iter);
-  await run("UPDATE users SET password_salt=?, password_hash=?, password_iter=?, updated_at=? WHERE id=?",
+  await run("UPDATE qa_users SET password_salt=?, password_hash=?, password_iter=?, updated_at=? WHERE id=?",
     [saltHex, hashHex, iter, new Date().toISOString(), auth.user!.id]);
 
   redirect("/profile?success=1");

@@ -250,7 +250,7 @@ async function StudentsTab({ classId, tenantId }: { classId: string; tenantId: s
 
   const students = await all<{ id: string; name: string; email: string }>(
     `SELECT u.id, u.name, u.email FROM class_students cs
-     JOIN users u ON u.id = cs.user_id
+     JOIN qa_users u ON u.id = cs.user_id
      WHERE cs.class_id=? ORDER BY u.name ASC`,
     [classId]
   );
@@ -258,7 +258,7 @@ async function StudentsTab({ classId, tenantId }: { classId: string; tenantId: s
   const studentIds = new Set(students.map((s) => s.id));
   const allStudents = await all<{ id: string; name: string; email: string }>(
     `SELECT u.id, u.name, u.email FROM memberships m
-     JOIN users u ON u.id = m.user_id
+     JOIN qa_users u ON u.id = m.user_id
      WHERE m.tenant_id=? AND m.role='STUDENT' AND m.status='ACTIVE' AND u.status='ACTIVE'
      ORDER BY u.name ASC`,
     [tenantId]
