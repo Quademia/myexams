@@ -14,8 +14,9 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 export function getEnv() {
   const ctx = getCloudflareContext();
   // Secrets aren't in the generated types, so we use a type assertion.
-  const env = ctx.env as unknown as { APP_SECRET?: string; DB: D1Database };
+  const env = ctx.env as unknown as { APP_SECRET?: string; RESEND_API_KEY?: string; DB: D1Database };
   return {
     APP_SECRET: env.APP_SECRET || "",
+    RESEND_API_KEY: env.RESEND_API_KEY || "",
   };
 }

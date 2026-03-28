@@ -42,15 +42,23 @@ async function microsoftAction() {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const params = await searchParams;
   const error = params.error;
+  const message = params.message;
 
   return (
     <main className="max-w-md mx-auto p-6 mt-12">
       <Card>
         <h1 className="text-xl font-bold mb-4">Login</h1>
+
+        {/* Show success banner after a password reset. */}
+        {message === "password-reset" && (
+          <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg p-3 mb-4">
+            Your password has been reset. Please log in.
+          </div>
+        )}
 
         {/* Show error message if login failed.
             NextAuth uses "CredentialsSignin" as the error code when
@@ -86,9 +94,15 @@ export default async function LoginPage({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
           />
 
+          <div className="text-right mt-1">
+            <a href="/forgot-password" className="text-xs text-teal-700 hover:underline">
+              Forgot your password?
+            </a>
+          </div>
+
           <button
             type="submit"
-            className="w-full mt-4 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-800 transition-colors"
+            className="w-full mt-3 py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-800 transition-colors"
           >
             Login
           </button>

@@ -186,8 +186,9 @@ export function makeJoinCodePlain(): string {
   return `${rnd(4)}-${rnd(4)}`;
 }
 
-// sha256Hex is still needed by joinCodeHash below.
-async function sha256Hex(text: string): Promise<string> {
+// sha256Hex is used by joinCodeHash below, and also by the password-reset flow
+// (forgot-password and reset-password pages hash tokens with SHA-256).
+export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(text)
