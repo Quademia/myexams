@@ -111,7 +111,7 @@ async function forgotPasswordAction(formData: FormData) {
 
   const resend = new Resend(RESEND_API_KEY);
   await resend.emails.send({
-    from: "QAcademy <noreply@qacademy.app>",
+    from: "QAcademy <noreply@qacademynurses.com>",
     to: email,
     subject: "Reset your QAcademy password",
     html: `
