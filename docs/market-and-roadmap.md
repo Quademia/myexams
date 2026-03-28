@@ -58,6 +58,7 @@ The migration to the new stack was essential preparation — it cleared architec
 | Gap | Why it matters |
 |---|---|
 | Email verification on signup | Any email can be used without verification |
+| Email invitations — invite specific people by email address | Controlled, audited onboarding. Only that person can use the link. Complements join codes which are better for bulk open enrolment. Requires bulk CSV import to be practical at scale. |
 | Aggregate reporting — class averages, question performance, cohort comparisons | Schools and organisations make curriculum and training decisions from this data |
 | Data export per tenant | Organisations must be able to take their data if they leave |
 | Self-service school/organisation signup | Currently only a system admin can create a new tenant — not scalable |
@@ -143,7 +144,9 @@ Make the platform safe and complete enough for real organisations to use:
 - Email notifications (results, exam schedule, approval requests)
 - Rate limiting and basic security hardening
 - Error handling and user-facing messages
-- Bulk import for members and questions
+- Email invitations — invite specific people by email address with single-use links tied to that person
+- Bulk CSV import — upload a spreadsheet of members, send all invites in one action
+- Bulk import for questions
 
 ### Stage 2 — UI and experience
 Make the platform look and feel like a product:
@@ -238,4 +241,34 @@ Current test users can be cleared — there are no real users to preserve. Start
 
 ---
 
-*Last updated: March 2026*
+## Onboarding Strategy
+
+QAcademy supports two onboarding models which complement each other:
+
+### Join Codes — bulk, self-service
+Admin creates a code with configured scope, expiry, max uses, and approval mode.
+Shared via any channel. Best for large groups, open enrolment periods, and
+low-resource environments where email is unreliable.
+Already built and working.
+
+### Email Invitations — individual, controlled
+Admin enters an email address. System sends a personalised single-use invite link
+tied to that specific email. Only that person can use it. Full audit trail of
+who was invited, when, and whether they accepted.
+Best for individual adds, teacher/admin roles, and organisations needing clean audit trails.
+Not yet built.
+
+### Why both matter
+Join codes eliminate the need to enter long lists of emails for bulk onboarding.
+Email invitations eliminate the risk of unauthorised access from a leaked code.
+Together they cover every onboarding scenario a school or organisation will encounter.
+
+### Bulk CSV import — the force multiplier
+Email invitations are only practical at scale when combined with bulk CSV import.
+Admin uploads a spreadsheet of email addresses, system sends all invites in one action.
+Without CSV import, email invitations are only viable for individual adds.
+Roadmap: email invitations first, bulk CSV import second.
+
+---
+
+*Last updated: 2026-03-28*
