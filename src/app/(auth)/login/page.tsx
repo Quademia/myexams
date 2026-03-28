@@ -111,6 +111,8 @@ async function loginAction(formData: FormData) {
     // "NEXT_REDIRECT", which varies by platform.
 
     if (err instanceof AuthError) {
+      const { redirect } = await import("next/navigation");
+
       if (err.type === "CredentialsSignin") {
         // Login failed — bad password or unknown user.
         await logAuthEvent({
@@ -126,6 +128,7 @@ async function loginAction(formData: FormData) {
           failureCountAtTime: null,
           meta,
         });
+        redirect("/login?error=CredentialsSignin");
       } else {
         // Any other AuthError (e.g. success redirect) — log success.
         await logAuthEvent({
@@ -141,10 +144,8 @@ async function loginAction(formData: FormData) {
           failureCountAtTime: null,
           meta,
         });
+        redirect("/");
       }
-
-      // Re-throw so Next.js / NextAuth can complete the redirect.
-      throw err;
     }
 
     // Genuinely unexpected error (not from NextAuth) — log and re-throw.
