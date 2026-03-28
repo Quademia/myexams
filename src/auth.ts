@@ -3,8 +3,11 @@
 //
 // HOW IT WORKS:
 // - NextAuth handles authentication (sign-in, sign-out, session management).
-// - We use the D1 adapter so NextAuth stores its own data (accounts, sessions,
-//   verification tokens) in our Cloudflare D1 database.
+// - We do NOT use the D1 adapter in the main config. With JWT session strategy,
+//   NextAuth doesn't need to store sessions in D1. And for credentials login,
+//   users already live in qa_users — the adapter would try to write them into
+//   NextAuth's own users table, causing a "server configuration" error.
+// - For Google/Microsoft SSO, the signIn callback manually writes to qa_users.
 // - Three providers are configured:
 //     1. Credentials — email + password (checks against qa_users table).
 //     2. Google — OAuth via Google.
@@ -20,7 +23,6 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
-import { D1Adapter } from "@auth/d1-adapter";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { pbkdf2Hex } from "@/lib/auth";
 
@@ -50,14 +52,9 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
     AUTH_MICROSOFT_ENTRA_ID_TENANT_ID?: string;
   };
 
-  const adapter = D1Adapter(env.DB);
   const APP_SECRET = env.APP_SECRET || "";
 
   return {
-    // ── Adapter ──────────────────────────────────────────────────────────
-    // Tells NextAuth to store users, accounts, and tokens in our D1 database.
-    adapter,
-
     // ── Providers ────────────────────────────────────────────────────────
     providers: [
       // 1. Credentials — email + password login.
