@@ -8,12 +8,9 @@ if (process.env.NODE_ENV === "development") {
 }
 
 const nextConfig: NextConfig = {
-  // Ensure NextAuth's catch-all API route is never statically optimized.
-  // The [...nextauth] route must run dynamically on every request because it
-  // handles sign-in, callbacks, CSRF tokens, etc.
-  // serverExternalPackages tells Next.js not to bundle these — they need
-  // native/runtime resolution on Cloudflare Workers.
-  serverExternalPackages: ["next-auth", "@auth/d1-adapter"],
+  // NextAuth and its D1 adapter should be bundled (not external) on Cloudflare
+  // Workers, because Workers doesn't have a Node.js module resolution system
+  // at runtime. Everything must be bundled into the single worker script.
 };
 
 export default nextConfig;

@@ -9,6 +9,11 @@
 
 import { signOut } from "@/auth";
 
+// Force this route to be dynamic — never pre-render at build time.
+// Without this, Next.js tries to collect page data during build,
+// which fails because getCloudflareContext() isn't available at build time.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   await signOut({ redirectTo: "/login" });
 }
