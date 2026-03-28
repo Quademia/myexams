@@ -499,6 +499,53 @@ CREATE TABLE IF NOT EXISTS sitting_approval_comments (
 
 
 -- ============================================================
+-- AUDIT & SECURITY TABLES
+-- These tables support login monitoring, rate limiting, and
+-- password reset auditing. They are written to by fire-and-forget
+-- helpers in src/lib/auth-events.ts and src/lib/reset-log.ts.
+-- ============================================================
+
+-- 28. auth_events — logs every login attempt (success, failure, SSO initiation)
+CREATE TABLE IF NOT EXISTS auth_events (
+  id                    TEXT PRIMARY KEY,
+  ts_utc                TEXT NOT NULL,        -- ISO 8601 timestamp
+  kind                  TEXT NOT NULL,        -- LOGIN_EMAIL | LOGIN_USERNAME | LOGIN_GOOGLE | LOGIN_MICROSOFT
+  identifier            TEXT NOT NULL,        -- what was submitted (email, username, or "google_sso" etc.)
+  user_id               TEXT,                 -- qa_users.id or NULL if unknown
+  ip_hash               TEXT,                 -- SHA-256 of cf-connecting-ip
+  ua_hash               TEXT,                 -- SHA-256 of user-agent
+  ok                    INTEGER,              -- 1 = success, 0 = failure, NULL = unknown (SSO redirect)
+  error_code            TEXT,                 -- e.g. "invalid_login", "too_many_attempts"
+  note                  TEXT,                 -- human-readable detail
+  tenant_id             TEXT,                 -- tenant context or NULL
+  session_id            TEXT,                 -- session identifier or NULL
+  country               TEXT,                 -- raw cf-ipcountry header
+  login_method_detail   TEXT,                 -- e.g. "returning", "first_time_sso"
+  failure_count_at_time INTEGER,              -- recent failure count at time of attempt
+  ua_parsed             TEXT                  -- e.g. "Windows · Chrome", "iOS · Safari"
+);
+
+-- 29. password_reset_log — logs every password reset request attempt
+CREATE TABLE IF NOT EXISTS password_reset_log (
+  id              TEXT PRIMARY KEY,
+  identifier_raw  TEXT NOT NULL,        -- exactly what was typed into the form
+  email           TEXT,                 -- resolved email or NULL
+  username        TEXT,                 -- resolved username or NULL
+  user_id         TEXT,                 -- qa_users.id or NULL
+  requested_utc   TEXT NOT NULL,        -- ISO 8601 timestamp
+  action_note     TEXT,                 -- human-readable description
+  ip_hash         TEXT,                 -- SHA-256 of cf-connecting-ip
+  ua_hash         TEXT,                 -- SHA-256 of user-agent
+  reset_token     TEXT,                 -- raw token or NULL
+  status          TEXT NOT NULL,        -- NO_USER | RATE_LIMITED | RATE_LIMITED_24H | EMAIL_SENT
+  tenant_id       TEXT,                 -- tenant context or NULL
+  ip_country      TEXT,                 -- raw cf-ipcountry header
+  ua_parsed       TEXT,                 -- e.g. "Windows · Chrome"
+  delivery_status TEXT                  -- future: email delivery tracking
+);
+
+
+-- ============================================================
 -- INDEXES
 -- Critical for performance at scale — without these, queries
 -- slow down significantly as data grows.
@@ -509,6 +556,12 @@ CREATE INDEX IF NOT EXISTS idx_exam_attempts_user_id    ON exam_attempts(user_id
 CREATE INDEX IF NOT EXISTS idx_exam_attempts_sitting_id ON exam_attempts(sitting_id);
 CREATE INDEX IF NOT EXISTS idx_exam_answers_attempt_id  ON exam_answers(attempt_id);
 CREATE INDEX IF NOT EXISTS idx_exam_answers_question_id ON exam_answers(question_id);
+
+-- Audit table indexes — needed for rate limit queries
+CREATE INDEX IF NOT EXISTS idx_auth_events_identifier ON auth_events(identifier, ts_utc);
+CREATE INDEX IF NOT EXISTS idx_auth_events_ip_hash    ON auth_events(ip_hash, ts_utc);
+CREATE INDEX IF NOT EXISTS idx_auth_events_user_id    ON auth_events(user_id, ts_utc);
+CREATE INDEX IF NOT EXISTS idx_password_reset_log_email ON password_reset_log(email, requested_utc);
 
 
 -- ============================================================
@@ -552,3 +605,9 @@ CREATE INDEX IF NOT EXISTS idx_exam_answers_question_id ON exam_answers(question
 -- verification_tokens (with QAcademy audit columns).
 -- auth_id column added to qa_users to link to NextAuth users.id.
 -- password_hash, password_salt, password_iter made nullable (SSO users have no password).
+
+-- Audit & security tables — 2026-03-28:
+-- Created auth_events table for login attempt logging and rate limiting.
+-- Created password_reset_log table for password reset request auditing.
+-- Added indexes on auth_events (identifier, ip_hash, user_id) and
+-- password_reset_log (email) for rate limit query performance.

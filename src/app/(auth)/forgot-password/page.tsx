@@ -5,10 +5,10 @@
 // 1. User enters their email and submits the form.
 // 2. A Server Action runs on the server:
 //    a. Looks up the email in qa_users (our platform user table).
-//    b. If not found, we still show "success" to prevent account enumeration
-//       (attackers can't probe which emails are registered).
-//    c. Rate-limits: if a valid, unused token was created in the last 10 minutes,
-//       we silently do nothing (still show success).
+//    b. If not found, logs to password_reset_log with status NO_USER and
+//       shows "success" to prevent account enumeration.
+//    c. Checks rate limits via password_reset_log — if already sent a reset
+//       in the last 10 minutes or 3 in 24 hours, silently shows success.
 //    d. Invalidates any previous unused tokens for this email.
 //    e. Generates a cryptographically random token (two UUIDs mashed together).
 //    f. Stores a SHA-256 hash of the token in the verification_tokens table.
@@ -16,12 +16,15 @@
 //       couldn't forge reset links.)
 //    g. Sends the raw token via email using Resend. The link includes the token
 //       and email as query params so the reset-password page can verify.
+//    h. Logs to password_reset_log with status EMAIL_SENT.
 // 3. The page shows a generic success message.
 
 import { headers } from "next/headers";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { sha256Hex } from "@/lib/auth";
+import { logResetRequest, checkResetRateLimit } from "@/lib/reset-log";
+import { getRequestMeta } from "@/lib/auth-events";
 import { Card } from "@/components/ui/Card";
 import { Resend } from "resend";
 
@@ -36,6 +39,9 @@ async function forgotPasswordAction(formData: FormData) {
   const email = (formData.get("email") as string || "").toLowerCase().trim();
   if (!email) return { sent: true }; // still show success for empty input
 
+  // Derive request metadata from Cloudflare headers — needed for logging.
+  const meta = await getRequestMeta();
+
   const { first, run } = getDb();
   const { APP_SECRET, RESEND_API_KEY } = getEnv();
 
@@ -46,28 +52,59 @@ async function forgotPasswordAction(formData: FormData) {
     [email]
   );
 
-  // If no user found, stop here — but still show the generic success message.
-  if (!user) return { sent: true };
+  // If no user found, log it and stop — but still show the generic success message.
+  if (!user) {
+    await logResetRequest({
+      identifierRaw: email,
+      email: null,
+      username: null,
+      userId: null,
+      tenantId: null,
+      actionNote: "No matching user for identifier",
+      resetToken: null,
+      status: "NO_USER",
+      meta,
+    });
+    return { sent: true };
+  }
+
+  // 2. Check rate limits via password_reset_log.
+  //    Short window: 1 request in 10 minutes → blocked.
+  //    Long window:  3 requests in 24 hours → blocked.
+  const rateCheck = await checkResetRateLimit(email);
+
+  if (rateCheck.blocked) {
+    if (rateCheck.window === "short") {
+      await logResetRequest({
+        identifierRaw: email,
+        email: user.email,
+        username: null,
+        userId: user.id,
+        tenantId: null,
+        actionNote: "Rate limited — 10 minute window",
+        resetToken: null,
+        status: "RATE_LIMITED",
+        meta,
+      });
+    } else {
+      await logResetRequest({
+        identifierRaw: email,
+        email: user.email,
+        username: null,
+        userId: user.id,
+        tenantId: null,
+        actionNote: "Rate limited — 24 hour window (3 emails sent)",
+        resetToken: null,
+        status: "RATE_LIMITED_24H",
+        meta,
+      });
+    }
+    // Show success silently — don't reveal rate limiting to the user.
+    return { sent: true };
+  }
 
   const nowUnix = Math.floor(Date.now() / 1000);
   const nowISO = new Date().toISOString();
-
-  // 2. Rate limit — check if a valid (unused, unexpired, non-invalidated) token
-  //    was created for this email in the last 10 minutes.
-  //    "created_at" is stored as an ISO string, so we compare it.
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  const recentToken = await first<{ token: string }>(
-    `SELECT token FROM verification_tokens
-     WHERE identifier = ?
-       AND used_at IS NULL
-       AND invalidated_at IS NULL
-       AND expires > ?
-       AND created_at > ?`,
-    [email, nowUnix, tenMinutesAgo]
-  );
-
-  // If a recent token exists, stop — don't spam the user with emails.
-  if (recentToken) return { sent: true };
 
   // 3. Invalidate all existing unused tokens for this email.
   //    This ensures only the newest reset link works.
@@ -132,6 +169,19 @@ async function forgotPasswordAction(formData: FormData) {
         <p style="color: #666; font-size: 14px;">If you did not request this, you can ignore this email.</p>
       </div>
     `,
+  });
+
+  // 9. Log the successful email send to password_reset_log.
+  await logResetRequest({
+    identifierRaw: email,
+    email: user.email,
+    username: null,
+    userId: user.id,
+    tenantId: null,
+    actionNote: "Reset email sent successfully",
+    resetToken: rawToken,
+    status: "EMAIL_SENT",
+    meta,
   });
 
   return { sent: true };

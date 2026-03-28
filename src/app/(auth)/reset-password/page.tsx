@@ -112,6 +112,20 @@ async function resetPasswordAction(formData: FormData) {
     [nowISO, ip, email, tokenHash]
   );
 
+  // ── Update password_reset_log ──
+  // Append " | password_changed" to the action_note on the matching row
+  // so we can see in the audit log that the reset was completed.
+  try {
+    await run(
+      `UPDATE password_reset_log
+       SET action_note = action_note || ' | password_changed'
+       WHERE reset_token = ? AND status = 'EMAIL_SENT'`,
+      [token]
+    );
+  } catch {
+    // Fire-and-forget — never break the reset flow for logging.
+  }
+
   // ── Redirect to login ──
   const { redirect } = await import("next/navigation");
   redirect("/login?message=password-reset");

@@ -9,8 +9,19 @@
 // - For Google/Microsoft: redirects to the OAuth provider's login page
 // - On success: creates a JWT cookie and redirects to "/"
 // - On failure: redirects back here with ?error=CredentialsSignin
+//
+// AUTH EVENT LOGGING & RATE LIMITING:
+// Before every credentials login attempt we:
+//   1. Derive ip_hash, ua_hash, country, ua_parsed from Cloudflare headers.
+//   2. Look up the user in qa_users to get user_id (for rate limit check).
+//   3. Check rate limits (5 failures in 10 min or 10 in 24 hr → blocked).
+//   4. Log the attempt to auth_events (fire-and-forget).
+// For SSO (Google/Microsoft) we log the initiation with ok=null — the actual
+// success/failure will be logged via the NextAuth signIn callback later.
 
 import { signIn } from "@/auth";
+import { getDb } from "@/lib/db";
+import { logAuthEvent, checkLoginRateLimit, getRequestMeta } from "@/lib/auth-events";
 import { Card } from "@/components/ui/Card";
 
 // Server Action for email + password login.
@@ -18,22 +29,188 @@ import { Card } from "@/components/ui/Card";
 // which runs our authorize() function in src/auth.ts.
 async function loginAction(formData: FormData) {
   "use server";
-  await signIn("credentials", {
-    email: (formData.get("email") as string || "").toLowerCase().trim(),
-    password: formData.get("password") as string || "",
-    redirectTo: "/",
-  });
+
+  const email = (formData.get("email") as string || "").toLowerCase().trim();
+  const password = formData.get("password") as string || "";
+
+  // 1. Derive request metadata from Cloudflare headers.
+  const meta = await getRequestMeta();
+
+  // 2. Look up the user in qa_users so we have user_id for rate limiting.
+  //    If the user doesn't exist, we still proceed — signIn will fail with
+  //    "CredentialsSignin" and we log it as a failure.
+  const { first } = getDb();
+  const user = await first<{ id: string }>(
+    "SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'",
+    [email]
+  );
+  const userId = user?.id ?? null;
+
+  // 3. Check rate limits — short window (10 min, 5 failures) and long (24 hr, 10 failures).
+  const rateCheck = await checkLoginRateLimit(email, userId, meta.ipHash);
+
+  if (rateCheck.blocked) {
+    // Log the blocked attempt.
+    const window = rateCheck.window === "short" ? "10m" : "24h";
+    const c = rateCheck.counts!;
+    const note = `blocked(${window}): short_user=${c.user}, short_identifier=${c.identifier}, short_ip=${c.ip}`;
+    const errorCode = rateCheck.window === "short" ? "too_many_attempts" : "too_many_attempts_24h";
+
+    await logAuthEvent({
+      kind: "LOGIN_EMAIL",
+      identifier: email,
+      userId,
+      ok: false,
+      errorCode,
+      note,
+      tenantId: null,
+      sessionId: null,
+      loginMethodDetail: null,
+      failureCountAtTime: null,
+      meta,
+    });
+
+    // Redirect back to login with rate limit error.
+    const { redirect } = await import("next/navigation");
+    redirect("/login?error=TooManyAttempts");
+  }
+
+  // 4. Attempt the login via NextAuth.
+  //    signIn() throws a NEXT_REDIRECT on success (redirectTo: "/") or on
+  //    failure (redirectTo: "/login?error=CredentialsSignin"). We need to
+  //    catch the failure case to log it, then re-throw so NextAuth can
+  //    complete the redirect.
+  try {
+    await signIn("credentials", {
+      email,
+      password,
+      redirectTo: "/",
+    });
+
+    // If signIn didn't throw, it means success — log it.
+    // (In practice, signIn always throws a NEXT_REDIRECT, so this line
+    // is only reached if NextAuth changes behavior in a future version.)
+    await logAuthEvent({
+      kind: "LOGIN_EMAIL",
+      identifier: email,
+      userId,
+      ok: true,
+      errorCode: null,
+      note: null,
+      tenantId: null,
+      sessionId: null,
+      loginMethodDetail: "returning",
+      failureCountAtTime: null,
+      meta,
+    });
+  } catch (err: unknown) {
+    // NextAuth throws a special error with a NEXT_REDIRECT digest on both
+    // success and failure redirects. We need to inspect the digest to know
+    // which happened.
+    const e = err as { digest?: string };
+
+    if (typeof e.digest === "string" && e.digest.includes("NEXT_REDIRECT")) {
+      // Check if this redirect is going to an error page (login failure)
+      // or to "/" (success). The digest contains the redirect URL.
+      if (e.digest.includes("error=")) {
+        // Login failed — bad password or unknown user.
+        await logAuthEvent({
+          kind: "LOGIN_EMAIL",
+          identifier: email,
+          userId,
+          ok: false,
+          errorCode: "invalid_login",
+          note: "bad_password",
+          tenantId: null,
+          sessionId: null,
+          loginMethodDetail: null,
+          failureCountAtTime: null,
+          meta,
+        });
+      } else {
+        // Login succeeded — log success.
+        await logAuthEvent({
+          kind: "LOGIN_EMAIL",
+          identifier: email,
+          userId,
+          ok: true,
+          errorCode: null,
+          note: null,
+          tenantId: null,
+          sessionId: null,
+          loginMethodDetail: "returning",
+          failureCountAtTime: null,
+          meta,
+        });
+      }
+
+      // Re-throw so Next.js can complete the redirect.
+      throw err;
+    }
+
+    // Unexpected error — log it and re-throw.
+    await logAuthEvent({
+      kind: "LOGIN_EMAIL",
+      identifier: email,
+      userId,
+      ok: false,
+      errorCode: "unexpected_error",
+      note: null,
+      tenantId: null,
+      sessionId: null,
+      loginMethodDetail: null,
+      failureCountAtTime: null,
+      meta,
+    });
+    throw err;
+  }
 }
 
 // Server Action for Google SSO.
+// We log the initiation with ok=null — we can't intercept the OAuth callback
+// result here. Full SSO result logging will be added to the NextAuth signIn
+// callback in src/auth.ts in a future update.
 async function googleAction() {
   "use server";
+
+  const meta = await getRequestMeta();
+  await logAuthEvent({
+    kind: "LOGIN_GOOGLE",
+    identifier: "google_sso",
+    userId: null,
+    ok: null,
+    errorCode: null,
+    note: "sso_redirect_initiated",
+    tenantId: null,
+    sessionId: null,
+    loginMethodDetail: null,
+    failureCountAtTime: null,
+    meta,
+  });
+
   await signIn("google", { redirectTo: "/" });
 }
 
 // Server Action for Microsoft SSO.
+// Same as Google — log initiation with ok=null, then redirect to Microsoft.
 async function microsoftAction() {
   "use server";
+
+  const meta = await getRequestMeta();
+  await logAuthEvent({
+    kind: "LOGIN_MICROSOFT",
+    identifier: "microsoft_sso",
+    userId: null,
+    ok: null,
+    errorCode: null,
+    note: "sso_redirect_initiated",
+    tenantId: null,
+    sessionId: null,
+    loginMethodDetail: null,
+    failureCountAtTime: null,
+    meta,
+  });
+
   await signIn("microsoft-entra-id", { redirectTo: "/" });
 }
 
@@ -60,6 +237,14 @@ export default async function LoginPage({
           </div>
         )}
 
+        {/* Show rate limit error — too many failed attempts. */}
+        {error === "TooManyAttempts" && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
+            Too many failed attempts. Please wait before trying again or{" "}
+            <a href="/forgot-password" className="underline">reset your password</a>.
+          </div>
+        )}
+
         {/* Show error message if login failed.
             NextAuth uses "CredentialsSignin" as the error code when
             the authorize() function returns null (wrong email/password). */}
@@ -68,7 +253,7 @@ export default async function LoginPage({
             Wrong email or password.
           </div>
         )}
-        {error && error !== "CredentialsSignin" && (
+        {error && error !== "CredentialsSignin" && error !== "TooManyAttempts" && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
             Something went wrong. Please try again.
           </div>
