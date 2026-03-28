@@ -20,6 +20,7 @@
 // success/failure will be logged via the NextAuth signIn callback later.
 
 import { signIn } from "@/auth";
+import { AuthError } from "next-auth";
 import { getDb } from "@/lib/db";
 import { logAuthEvent, checkLoginRateLimit, getRequestMeta } from "@/lib/auth-events";
 import { Card } from "@/components/ui/Card";
@@ -104,15 +105,13 @@ async function loginAction(formData: FormData) {
       meta,
     });
   } catch (err: unknown) {
-    // NextAuth throws a special error with a NEXT_REDIRECT digest on both
-    // success and failure redirects. We need to inspect the digest to know
-    // which happened.
-    const e = err as { digest?: string };
+    // NextAuth throws AuthError subclasses for both credential failures and
+    // internal redirects. Using instanceof AuthError is reliable across all
+    // runtimes (Node, Cloudflare Workers) — unlike inspecting e.digest for
+    // "NEXT_REDIRECT", which varies by platform.
 
-    if (typeof e.digest === "string" && e.digest.includes("NEXT_REDIRECT")) {
-      // Check if this redirect is going to an error page (login failure)
-      // or to "/" (success). The digest contains the redirect URL.
-      if (e.digest.includes("error=")) {
+    if (err instanceof AuthError) {
+      if (err.type === "CredentialsSignin") {
         // Login failed — bad password or unknown user.
         await logAuthEvent({
           kind: "LOGIN_EMAIL",
@@ -128,7 +127,7 @@ async function loginAction(formData: FormData) {
           meta,
         });
       } else {
-        // Login succeeded — log success.
+        // Any other AuthError (e.g. success redirect) — log success.
         await logAuthEvent({
           kind: "LOGIN_EMAIL",
           identifier: email,
@@ -144,11 +143,11 @@ async function loginAction(formData: FormData) {
         });
       }
 
-      // Re-throw so Next.js can complete the redirect.
+      // Re-throw so Next.js / NextAuth can complete the redirect.
       throw err;
     }
 
-    // Unexpected error — log it and re-throw.
+    // Genuinely unexpected error (not from NextAuth) — log and re-throw.
     await logAuthEvent({
       kind: "LOGIN_EMAIL",
       identifier: email,
