@@ -36,28 +36,84 @@ CREATE TABLE IF NOT EXISTS tenants (
   updated_at  TEXT NOT NULL
 );
 
--- 2. users — every person across all schools
-CREATE TABLE IF NOT EXISTS users (
+-- qa_users — QAcademy platform users (one row per person across all schools).
+-- NOTE: This is NOT NextAuth's users table. NextAuth has its own separate `users`
+-- table below. This table holds platform-specific data: name, password hash,
+-- admin flag, status, and auth_id which links to NextAuth's users.id.
+CREATE TABLE IF NOT EXISTS qa_users (
   id              TEXT PRIMARY KEY,
   name            TEXT NOT NULL,
   email           TEXT NOT NULL UNIQUE,
-  password_hash   TEXT NOT NULL,
-  password_salt   TEXT NOT NULL,
-  password_iter   INTEGER NOT NULL,
+  password_hash   TEXT,
+  password_salt   TEXT,
+  password_iter   INTEGER,
   is_system_admin INTEGER NOT NULL DEFAULT 0,
   status          TEXT NOT NULL DEFAULT 'ACTIVE', -- ACTIVE | SUSPENDED
+  auth_id         TEXT,                           -- links to NextAuth users.id
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
 
--- 3. sessions — login sessions (token stored hashed)
+-- ============================================================
+-- NEXTAUTH TABLES
+-- These four tables are owned and managed by NextAuth v5.
+-- QAcademy does not write to these tables directly except:
+--   - qa_users.auth_id links to users.id here
+--   - verification_tokens has extra QAcademy audit columns (see below)
+-- Do NOT modify the core NextAuth columns in these tables.
+-- ============================================================
+
+-- NextAuth identity records — one row per login identity (email or OAuth).
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT NOT NULL PRIMARY KEY,
+  name          TEXT,
+  email         TEXT UNIQUE,
+  emailVerified INTEGER,
+  image         TEXT
+);
+
+-- Links OAuth provider accounts (Google, Microsoft) to NextAuth users.
+CREATE TABLE IF NOT EXISTS accounts (
+  id                TEXT NOT NULL PRIMARY KEY,
+  userId            TEXT NOT NULL,
+  type              TEXT NOT NULL,
+  provider          TEXT NOT NULL,
+  providerAccountId TEXT NOT NULL,
+  refresh_token     TEXT,
+  access_token      TEXT,
+  expires_at        INTEGER,
+  token_type        TEXT,
+  scope             TEXT,
+  id_token          TEXT,
+  session_state     TEXT,
+  FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- NextAuth session storage — not actively used with JWT strategy
+-- but required by the NextAuth D1 adapter.
 CREATE TABLE IF NOT EXISTS sessions (
-  id                TEXT PRIMARY KEY,
-  user_id           TEXT NOT NULL,
-  token_hash        TEXT NOT NULL UNIQUE,
-  active_tenant_id  TEXT,
-  expires_at        TEXT NOT NULL,
-  created_at        TEXT NOT NULL
+  id           TEXT NOT NULL PRIMARY KEY,
+  sessionToken TEXT NOT NULL UNIQUE,
+  userId       TEXT NOT NULL,
+  expires      INTEGER NOT NULL,
+  FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Tokens for email verification and password reset.
+-- The columns below identifier/token/expires are QAcademy additions —
+-- NOT part of the NextAuth schema. NextAuth does not know about them
+-- and never writes to them. All are nullable so NextAuth inserts are unaffected.
+CREATE TABLE IF NOT EXISTS verification_tokens (
+  identifier      TEXT NOT NULL,
+  token           TEXT NOT NULL,
+  expires         INTEGER NOT NULL,
+  PRIMARY KEY (identifier, token),
+  -- QAcademy audit columns — added 2026-03-28:
+  created_at      TEXT,   -- when the reset was requested
+  ip_address      TEXT,   -- IP that made the request
+  used_at         TEXT,   -- when the link was consumed (NULL = not yet used)
+  used_ip_address TEXT,   -- IP that consumed the link
+  invalidated_at  TEXT    -- when killed by a newer request
 );
 
 -- 4. memberships — user <-> school <-> role
@@ -487,3 +543,12 @@ CREATE INDEX IF NOT EXISTS idx_exam_answers_question_id ON exam_answers(question
 -- ALTER TABLE verification_tokens ADD COLUMN used_at TEXT;
 -- ALTER TABLE verification_tokens ADD COLUMN used_ip_address TEXT;
 -- ALTER TABLE verification_tokens ADD COLUMN invalidated_at TEXT;
+
+-- NextAuth migration — 2026-03-28:
+-- Renamed users table to qa_users in schema.sql (was already qa_users in live DB).
+-- Removed old custom sessions table from schema.sql (dead code — NextAuth JWT strategy
+-- does not use database sessions).
+-- Added all four NextAuth tables to schema.sql: users, accounts, sessions,
+-- verification_tokens (with QAcademy audit columns).
+-- auth_id column added to qa_users to link to NextAuth users.id.
+-- password_hash, password_salt, password_iter made nullable (SSO users have no password).
