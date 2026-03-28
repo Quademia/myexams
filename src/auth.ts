@@ -117,7 +117,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
       MicrosoftEntraId({
         clientId: env.AUTH_MICROSOFT_ENTRA_ID_ID,
         clientSecret: env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
-        issuer: `https://login.microsoftonline.com/consumers/v2.0`,
+        issuer: `https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0`,
       }),
     ],
 
