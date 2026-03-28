@@ -1,129 +1,44 @@
-// src/app/login/page.tsx
-// The login page — renders the form and handles submission.
+// src/app/(auth)/login/page.tsx
+// The login page — renders the email/password form and SSO buttons.
 //
-// HOW IT WORKS IN NEXT.JS:
-// Unlike the old code where GET and POST were handled in the same if-block,
-// Next.js separates concerns:
-// - This file (page.tsx) renders the form (like the old GET handler)
-// - The "action" attribute points to a Server Action (like the old POST handler)
-//
-// Server Actions are functions that run on the server when a form is submitted.
-// They're marked with "use server" at the top. Next.js handles the form POST
-// automatically — no need to manually parse FormData or set response headers.
+// HOW IT WORKS WITH NEXTAUTH:
+// Instead of a custom Server Action that manually hashes passwords, creates
+// session rows, and sets cookies, we now call NextAuth's signIn() function.
+// NextAuth handles all of that internally:
+// - For credentials: calls the authorize() function in src/auth.ts
+// - For Google/Microsoft: redirects to the OAuth provider's login page
+// - On success: creates a JWT cookie and redirects to "/"
+// - On failure: redirects back here with ?error=CredentialsSignin
 
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { getDb } from "@/lib/db";
-import { pbkdf2Hex } from "@/lib/auth";
-import { getEnv } from "@/lib/env";
+import { signIn } from "@/auth";
 import { Card } from "@/components/ui/Card";
 
-// This is the Server Action — it runs on the server when the form is submitted.
-// It's the equivalent of the old "if (request.method === 'POST')" block.
+// Server Action for email + password login.
+// signIn("credentials", ...) tells NextAuth to use the Credentials provider,
+// which runs our authorize() function in src/auth.ts.
 async function loginAction(formData: FormData) {
   "use server";
-
-  const email = (formData.get("email") as string || "").toLowerCase().trim();
-  const password = (formData.get("password") as string || "");
-
-  if (!email || !password) {
-    redirect("/login?error=missing");
-  }
-
-  const { first, all, run } = getDb();
-  const { APP_SECRET } = getEnv();
-
-  // Look up the user by email.
-  const u = await first<{
-    id: string;
-    email: string;
-    name: string;
-    password_salt: string;
-    password_hash: string;
-    password_iter: number;
-    is_system_admin: number;
-  }>(
-    "SELECT id, email, name, password_salt, password_hash, password_iter, is_system_admin FROM qa_users WHERE email=? AND status='ACTIVE'",
-    [email]
-  );
-
-  if (!u) {
-    redirect("/login?error=invalid");
-  }
-
-  // Hash the provided password with the same salt/pepper and compare.
-  const check = await pbkdf2Hex(
-    password + "|" + APP_SECRET,
-    u.password_salt,
-    Number(u.password_iter)
-  );
-
-  if (check !== u.password_hash) {
-    redirect("/login?error=invalid");
-  }
-
-  // Password matches — create a session.
-  const token = crypto.randomUUID() + "-" + crypto.randomUUID();
-  const tokenHash = Array.from(
-    new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))
-    )
-  )
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  const now = new Date().toISOString();
-  const expires = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString();
-
-  await run(
-    "INSERT INTO sessions (token_hash, user_id, active_tenant_id, expires_at, created_at) VALUES (?,?,?,?,?)",
-    [tokenHash, u.id, null, expires, now]
-  );
-
-  // Set the session cookie.
-  const cookieStore = await cookies();
-  cookieStore.set("qa_sess", token, {
-    path: "/",
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+  await signIn("credentials", {
+    email: (formData.get("email") as string || "").toLowerCase().trim(),
+    password: formData.get("password") as string || "",
+    redirectTo: "/",
   });
-
-  // Redirect based on role — same logic as the old code.
-  if (Number(u.is_system_admin) === 1) {
-    redirect("/sys");
-  }
-
-  const mems = await all<{ tenant_id: string; role: string; tenant_name: string }>(
-    `SELECT m.tenant_id, m.role, t.name AS tenant_name
-     FROM memberships m
-     JOIN tenants t ON t.id = m.tenant_id
-     WHERE m.user_id=? AND m.status='ACTIVE' AND t.status='ACTIVE'
-     ORDER BY t.name ASC`,
-    [u.id]
-  );
-
-  if (!mems.length) {
-    redirect("/no-access");
-  }
-
-  if (mems.length === 1) {
-    await run("UPDATE sessions SET active_tenant_id=? WHERE token_hash=?", [
-      mems[0].tenant_id,
-      tokenHash,
-    ]);
-    if (mems[0].role === "SCHOOL_ADMIN") redirect("/school");
-    if (mems[0].role === "TEACHER") redirect("/teacher");
-    if (mems[0].role === "STUDENT") redirect("/student");
-    redirect("/no-access");
-  }
-
-  redirect("/choose-school");
 }
 
-// This is the page component — it renders the login form.
-// The searchParams prop gives us access to ?error=invalid in the URL.
+// Server Action for Google SSO.
+async function googleAction() {
+  "use server";
+  await signIn("google", { redirectTo: "/" });
+}
+
+// Server Action for Microsoft SSO.
+async function microsoftAction() {
+  "use server";
+  await signIn("microsoft-entra-id", { redirectTo: "/" });
+}
+
+// This is the page component — it renders the login form and SSO buttons.
+// The searchParams prop gives us access to ?error=... in the URL.
 export default async function LoginPage({
   searchParams,
 }: {
@@ -137,20 +52,23 @@ export default async function LoginPage({
       <Card>
         <h1 className="text-xl font-bold mb-4">Login</h1>
 
-        {/* Show error message if login failed */}
-        {error === "invalid" && (
+        {/* Show error message if login failed.
+            NextAuth uses "CredentialsSignin" as the error code when
+            the authorize() function returns null (wrong email/password). */}
+        {error === "CredentialsSignin" && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
             Wrong email or password.
           </div>
         )}
-        {error === "missing" && (
+        {error && error !== "CredentialsSignin" && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
-            Please enter both email and password.
+            Something went wrong. Please try again.
           </div>
         )}
 
-        {/* The action={loginAction} tells Next.js to run our Server Action
-            when the form is submitted. No fetch() or API route needed. */}
+        {/* Email + password form.
+            The action={loginAction} tells Next.js to run our Server Action
+            when the form is submitted. NextAuth handles the rest. */}
         <form action={loginAction}>
           <label className="block text-sm mb-1 mt-3">Email</label>
           <input
@@ -176,11 +94,41 @@ export default async function LoginPage({
           </button>
         </form>
 
+        {/* Divider between email/password and SSO buttons */}
+        <div className="flex items-center gap-3 my-5">
+          <div className="flex-1 border-t border-gray-200" />
+          <span className="text-xs text-gray-400 uppercase">or</span>
+          <div className="flex-1 border-t border-gray-200" />
+        </div>
+
+        {/* SSO buttons — each is a tiny form that calls its own Server Action.
+            We use forms (not buttons with onClick) because Server Actions
+            need a <form> to trigger on the server side. */}
+        <div className="space-y-3">
+          <form action={googleAction}>
+            <button
+              type="submit"
+              className="w-full py-2 border border-gray-300 text-sm font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Sign in with Google
+            </button>
+          </form>
+
+          <form action={microsoftAction}>
+            <button
+              type="submit"
+              className="w-full py-2 border border-gray-300 text-sm font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Sign in with Microsoft
+            </button>
+          </form>
+        </div>
+
         <p className="text-xs text-gray-400 mt-4">
           Have a join code? Go to <a href="/join" className="text-teal-700 hover:underline">/join</a>.
         </p>
         <p className="text-xs text-gray-400 mt-1">
-          <a href="/" className="text-teal-700 hover:underline">← Back to home</a>
+          <a href="/" className="text-teal-700 hover:underline">&larr; Back to home</a>
         </p>
         <p className="text-xs text-gray-400 mt-1">
           First time? Go to <a href="/setup" className="text-teal-700 hover:underline">/setup</a>.

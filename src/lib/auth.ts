@@ -1,40 +1,32 @@
 // src/lib/auth.ts
-// Authentication helper — reads the session cookie and looks up the logged-in user.
+// Authentication helper — reads the NextAuth session and looks up the logged-in user.
 //
 // HOW IT WORKS:
-// In the old stack, shared.js read cookies from the raw Request object.
-// In Next.js, we use the built-in cookies() function which does the same thing
-// but in a Next.js-friendly way.
+// NextAuth manages sessions via JWT cookies. When we call auth() from src/auth.ts,
+// NextAuth decodes the JWT and returns the session object (or null if not logged in).
+// We then look up the platform user in qa_users by email and load their memberships.
 //
-// The session flow is unchanged:
-// 1. Read the "qa_sess" cookie (a random token set at login)
-// 2. Hash it with SHA-256
-// 3. Look up that hash in the sessions table
-// 4. If found and not expired, load the user + their memberships
+// WHY THIS FILE EXISTS:
+// Every page in the app imports getAuth() or requireAuth() from here.
+// By keeping the same function names and return types, no other files need changing —
+// we just swapped the internals from custom cookies to NextAuth.
 //
 // USAGE:
 //   import { getAuth } from "@/lib/auth";
 //   const auth = await getAuth();
 //   if (!auth.user) redirect("/login");
 
-import { cookies } from "next/headers";
 import { getDb } from "./db";
+import { auth as nextAuth, unstable_update } from "@/auth";
 
 // ---------- Crypto helpers ----------
-// These are the same functions from shared.js, just in TypeScript.
+// These are the same functions from the old auth system.
+// Still needed for password hashing (change-password, login, setup, etc.).
 
 function toHex(buf: ArrayBuffer): string {
   return [...new Uint8Array(buf)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-}
-
-async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(text)
-  );
-  return toHex(digest);
 }
 
 export async function pbkdf2Hex(
@@ -68,6 +60,7 @@ export function randomSaltHex(): string {
 
 // ---------- Types ----------
 // These describe the shape of data we get back from the database.
+// They have NOT changed — every file that imports them still works.
 
 export interface User {
   id: string;
@@ -90,59 +83,55 @@ export interface AuthResult {
 
 // ---------- Main auth function ----------
 
-// Reads the session cookie, validates it, and returns the user + memberships.
+// Reads the NextAuth JWT session, looks up the platform user in qa_users,
+// and loads their school memberships.
 // Returns { user: null, session: null, memberships: [] } if not logged in.
 export async function getAuth(): Promise<AuthResult> {
   const empty: AuthResult = { user: null, session: null, memberships: [] };
 
-  // cookies() is a Next.js function that reads the request cookies.
-  // It replaces the manual cookie parsing we did in shared.js.
-  const cookieStore = await cookies();
-  const token = cookieStore.get("qa_sess")?.value;
-  if (!token) return empty;
+  // auth() is NextAuth's server-side session reader.
+  // It decodes the JWT cookie and returns the session, or null.
+  const nextSession = await nextAuth();
+  if (!nextSession?.user?.email) return empty;
 
-  const { first, all, run } = getDb();
+  const { first, all } = getDb();
 
-  // Hash the token and look it up in the sessions table.
-  const tokenHash = await sha256Hex(token);
-  const session = await first<{
-    token_hash: string;
-    user_id: string;
-    active_tenant_id: string | null;
-    expires_at: string;
-  }>(
-    "SELECT token_hash, user_id, active_tenant_id, expires_at FROM sessions WHERE token_hash=?",
-    [tokenHash]
-  );
-  if (!session) return empty;
-
-  // Check if the session has expired.
-  if (Date.parse(session.expires_at) < Date.now()) {
-    await run("DELETE FROM sessions WHERE token_hash=?", [tokenHash]);
-    return empty;
-  }
-
-  // Load the user.
+  // Look up the platform user by email (the bridge between NextAuth and qa_users).
   const user = await first<User>(
-    "SELECT id, email, name, is_system_admin FROM qa_users WHERE id=? AND status='ACTIVE'",
-    [session.user_id]
+    "SELECT id, email, name, is_system_admin FROM qa_users WHERE email = ? AND status = 'ACTIVE'",
+    [nextSession.user.email]
   );
   if (!user) return empty;
 
-  // Load all their school memberships.
+  // Load all their active school memberships.
+  // m.user_id references qa_users.id (NOT NextAuth's user id).
   const memberships = await all<Membership>(
     `SELECT m.tenant_id, m.role, t.name AS tenant_name
      FROM memberships m
      JOIN tenants t ON t.id = m.tenant_id
-     WHERE m.user_id=? AND m.status='ACTIVE' AND t.status='ACTIVE'
+     WHERE m.user_id = ? AND m.status = 'ACTIVE' AND t.status = 'ACTIVE'
      ORDER BY t.name ASC`,
     [user.id]
   );
+
+  // Build a session object that matches the old shape.
+  // Other files reference session.user_id, session.active_tenant_id, etc.
+  // - token_hash: no longer used (empty string for backward compat)
+  // - user_id: the qa_users.id
+  // - active_tenant_id: stored as a custom field in the JWT
+  // - expires_at: from the NextAuth session expiry
+  const session = {
+    token_hash: "",
+    user_id: user.id,
+    active_tenant_id: (nextSession as Record<string, unknown>).active_tenant_id as string | null ?? null,
+    expires_at: nextSession.expires ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  };
 
   return { user, session, memberships };
 }
 
 // Returns the active membership (the school the user is currently viewing).
+// Reads active_tenant_id from the session and finds the matching membership.
 export function pickActiveMembership(auth: AuthResult): Membership | null {
   const tid = auth.session?.active_tenant_id;
   if (!tid) return null;
@@ -150,26 +139,16 @@ export function pickActiveMembership(auth: AuthResult): Membership | null {
 }
 
 // Sets the active school for the current session.
+// Uses NextAuth's unstable_update to store active_tenant_id in the JWT.
 // Called when a user picks or switches schools.
 export async function setActiveTenant(tenantId: string) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("qa_sess")?.value;
-  if (!token) return;
-  const tokenHash = await sha256Hex(token);
-  const { run } = getDb();
-  await run("UPDATE sessions SET active_tenant_id=? WHERE token_hash=?", [tenantId, tokenHash]);
+  await unstable_update({ active_tenant_id: tenantId });
 }
 
-// Deletes the session and clears the cookie. Used by /logout.
+// Clears the NextAuth session. Used by /logout.
 export async function destroySession() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("qa_sess")?.value;
-  if (token) {
-    const tokenHash = await sha256Hex(token);
-    const { run } = getDb();
-    await run("DELETE FROM sessions WHERE token_hash=?", [tokenHash]);
-  }
-  cookieStore.delete("qa_sess");
+  const { signOut } = await import("@/auth");
+  await signOut({ redirect: false });
 }
 
 // Helper to format role names for display.
@@ -205,6 +184,15 @@ export function makeJoinCodePlain(): string {
     return s;
   };
   return `${rnd(4)}-${rnd(4)}`;
+}
+
+// sha256Hex is still needed by joinCodeHash below.
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(text)
+  );
+  return toHex(digest);
 }
 
 // Hashes a join code with the pepper for storage.

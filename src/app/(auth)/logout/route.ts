@@ -1,12 +1,14 @@
-// src/app/logout/route.ts
-// Logout route — destroys the session and redirects to /login.
-// This is a Route Handler (not a page) because it just does an action and redirects.
-// Route Handlers are Next.js's version of API endpoints.
+// src/app/(auth)/logout/route.ts
+// Logout route — clears the NextAuth session and redirects to /login.
+//
+// HOW IT WORKS:
+// We call NextAuth's signOut() with redirectTo: "/login".
+// signOut() deletes the JWT cookie and then sends a redirect response.
+// This replaces the old code that manually deleted a row from the sessions
+// table and cleared the qa_sess cookie.
 
-import { redirect } from "next/navigation";
-import { destroySession } from "@/lib/auth";
+import { signOut } from "@/auth";
 
 export async function GET() {
-  await destroySession();
-  redirect("/login");
+  await signOut({ redirectTo: "/login" });
 }
