@@ -49,7 +49,6 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
     AUTH_GOOGLE_SECRET?: string;
     AUTH_MICROSOFT_ENTRA_ID_ID?: string;
     AUTH_MICROSOFT_ENTRA_ID_SECRET?: string;
-    AUTH_MICROSOFT_ENTRA_ID_TENANT_ID?: string;
   };
 
   const APP_SECRET = env.APP_SECRET || "";
@@ -112,13 +111,13 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         clientSecret: env.AUTH_GOOGLE_SECRET,
       }),
 
-      // 3. Microsoft Entra ID (Azure AD) OAuth.
-      //    The issuer URL includes the tenant ID — this tells NextAuth which
-      //    Azure AD directory to authenticate against.
+      // 3. Microsoft Entra ID (Azure AD) OAuth — personal accounts only.
+      //    Using the "consumers" tenant so only personal Microsoft accounts
+      //    (Outlook.com, Hotmail, Xbox, etc.) can sign in.
       MicrosoftEntraId({
         clientId: env.AUTH_MICROSOFT_ENTRA_ID_ID,
         clientSecret: env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
-        issuer: `https://login.microsoftonline.com/${env.AUTH_MICROSOFT_ENTRA_ID_TENANT_ID}/v2.0`,
+        issuer: `https://login.microsoftonline.com/consumers/v2.0`,
       }),
     ],
 
