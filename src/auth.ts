@@ -170,8 +170,8 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         // When unstable_update() is called (e.g. from setActiveTenant),
         // the new data arrives in the "session" parameter (confusingly named).
         // We merge active_tenant_id from it into the token.
-        if (trigger === "update" && updateData?.active_tenant_id !== undefined) {
-          token.active_tenant_id = updateData.active_tenant_id;
+        if (trigger === "update" && updateData?.user?.active_tenant_id !== undefined) {
+          token.active_tenant_id = updateData.user.active_tenant_id;
         }
 
         return token;

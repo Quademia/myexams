@@ -142,7 +142,7 @@ export function pickActiveMembership(auth: AuthResult): Membership | null {
 // Uses NextAuth's unstable_update to store active_tenant_id in the JWT.
 // Called when a user picks or switches schools.
 export async function setActiveTenant(tenantId: string) {
-  await unstable_update({ active_tenant_id: tenantId });
+  await unstable_update({ user: { active_tenant_id: tenantId } });
 }
 
 // Clears the NextAuth session. Used by /logout.
