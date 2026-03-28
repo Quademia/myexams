@@ -123,7 +123,7 @@ export async function getAuth(): Promise<AuthResult> {
   const session = {
     token_hash: "",
     user_id: user.id,
-    active_tenant_id: (nextSession as Record<string, unknown>).active_tenant_id as string | null ?? null,
+    active_tenant_id: nextSession.user.active_tenant_id ?? null,
     expires_at: nextSession.expires ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   };
 

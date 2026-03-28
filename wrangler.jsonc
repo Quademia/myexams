@@ -10,6 +10,18 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  // Placeholder vars for local dev — real values live as Cloudflare secrets.
+  // These entries satisfy the type system so TypeScript doesn't complain
+  // about missing properties on CloudflareEnv during local builds.
+  "vars": {
+    "AUTH_SECRET": "",
+    "AUTH_GOOGLE_ID": "",
+    "AUTH_GOOGLE_SECRET": "",
+    "AUTH_MICROSOFT_ENTRA_ID_ID": "",
+    "AUTH_MICROSOFT_ENTRA_ID_SECRET": "",
+    "AUTH_MICROSOFT_ENTRA_ID_TENANT_ID": "",
+    "RESEND_API_KEY": ""
+  },
   "d1_databases": [
     {
       "binding": "DB",

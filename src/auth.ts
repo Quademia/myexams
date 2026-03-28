@@ -35,12 +35,23 @@ import { pbkdf2Hex } from "@/lib/auth";
 export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(async () => {
   // Grab the D1 database binding from Cloudflare's runtime environment.
   // The { async: true } flag is required for OpenNext on Workers.
-  const { env } = await getCloudflareContext({ async: true });
-  const adapter = D1Adapter(env.DB);
+  const { env: rawEnv } = await getCloudflareContext({ async: true });
 
-  // APP_SECRET is the pepper used for password hashing (set via `wrangler secret put`).
-  // It's not in the generated CloudflareEnv types, so we cast.
-  const APP_SECRET = (env as unknown as { APP_SECRET?: string }).APP_SECRET || "";
+  // Secrets (set via `wrangler secret put`) aren't in the generated CloudflareEnv
+  // type, so we cast once here — same pattern as src/lib/env.ts.
+  const env = rawEnv as unknown as {
+    DB: D1Database;
+    APP_SECRET?: string;
+    AUTH_SECRET?: string;
+    AUTH_GOOGLE_ID?: string;
+    AUTH_GOOGLE_SECRET?: string;
+    AUTH_MICROSOFT_ENTRA_ID_ID?: string;
+    AUTH_MICROSOFT_ENTRA_ID_SECRET?: string;
+    AUTH_MICROSOFT_ENTRA_ID_TENANT_ID?: string;
+  };
+
+  const adapter = D1Adapter(env.DB);
+  const APP_SECRET = env.APP_SECRET || "";
 
   return {
     // ── Adapter ──────────────────────────────────────────────────────────
@@ -172,9 +183,9 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         if (token.sub && session.user) {
           session.user.id = token.sub;
         }
-        // Attach active_tenant_id to the session object at the top level.
-        // TypeScript doesn't know about this custom field, so we cast.
-        (session as Record<string, unknown>).active_tenant_id = token.active_tenant_id ?? null;
+        // Attach active_tenant_id to the session object.
+        // Our next-auth.d.ts type declarations add this field to the Session type.
+        session.user.active_tenant_id = token.active_tenant_id ?? null;
         return session;
       },
 
