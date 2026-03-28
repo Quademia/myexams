@@ -187,7 +187,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         }
         // Attach active_tenant_id to the session object.
         // Our next-auth.d.ts type declarations add this field to the Session type.
-        session.user.active_tenant_id = token.active_tenant_id ?? null;
+        session.user.active_tenant_id = (token.active_tenant_id as string | null) ?? null;
         return session;
       },
 
