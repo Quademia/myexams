@@ -362,15 +362,15 @@ Join codes are particularly useful for schools onboarding large numbers of stude
 
 ## What The Platform Cannot Do Yet
 
-There is no way for a user to reset a forgotten password — if they forget their password, an administrator must create a new one for them.
+~~There is no way for a user to reset a forgotten password.~~ **Done** — users can reset their own password via a secure email link. Tokens are hashed before storage, single-use, and expire after 1 hour. All existing sessions are killed on password reset.
 
-The platform sends no emails at all — no notifications when an exam is published, when results are released, when an approval is needed, or when a join request is pending. Users must log in to discover anything has happened.
+The platform sends no emails other than password reset — no notifications when an exam is published, when results are released, when an approval is needed, or when a join request is pending. Users must log in to discover anything has happened.
 
-There is no rate limiting on the login page — someone could attempt to guess passwords repeatedly with no restriction.
+~~There is no rate limiting on the login page.~~ **Done** — login is rate limited across three dimensions (email, IP, user ID). 5 failures in 10 minutes or 10 in 24 hours blocks further attempts. Every login attempt is logged to an audit table.
 
 There is no email verification — any email address can be used to create an account without proving ownership.
 
-There is no account lockout after repeated failed login attempts.
+~~There is no account lockout after repeated failed login attempts.~~ **Done** — rate limiting blocks login after repeated failures. Concurrent sessions are limited to 2 per user.
 
 There is no way to import students or questions in bulk from a spreadsheet — every person and every question must be added one at a time.
 
@@ -382,9 +382,9 @@ There is no self-service signup for new schools — only the system administrato
 
 There is no certificate or downloadable result document — students can view results on screen but cannot download or print a formal certificate.
 
-There is no audit trail — there is no record of who changed what and when, beyond basic timestamps on records.
+~~There is no audit trail.~~ **Partially done** — every login attempt and password reset request is logged with timestamp, IP hash, User-Agent, and outcome. Data change auditing (who edited what) is not yet built.
 
-There is no session management — users cannot see or revoke their active login sessions.
+~~There is no session management.~~ **Done** — D1 session tracking with concurrent limits (max 2 active sessions), automatic session revocation on password reset, and idle timeout with cross-tab sync. Users cannot yet view their own active sessions in a UI, but the backend tracking and enforcement is complete.
 
 There is no confirmation dialog on destructive actions — clicking Remove, Delete, or Revoke takes effect immediately with no warning or undo option.
 
@@ -408,8 +408,8 @@ There is no way for a member of the public to find and register for an exam — 
 
 ## Summary
 
-QAcademy is a working multi-tenant exam platform with a genuinely strong core. The exam engine supports five question types with rich feedback, automatic and manual grading, grade bands, and multiple attempts. The approval gate system and sittings are features that most competitors do not have at all. The multi-tenant architecture means it can serve unlimited schools from a single platform. The join code system makes onboarding practical for real schools. What is missing are the production essentials — password reset, email notifications, bulk import, security hardening, and visual polish — that separate a working prototype from a product that a school would confidently adopt. Any organisation willing to work within those current limitations could use it today for real exams.
+QAcademy is a working multi-tenant exam platform with a genuinely strong core. The exam engine supports five question types with rich feedback, automatic and manual grading, grade bands, and multiple attempts. The approval gate system and sittings are features that most competitors do not have at all. The multi-tenant architecture means it can serve unlimited schools from a single platform. The join code system makes onboarding practical for real schools. Authentication and security are now production-grade — NextAuth v5 with email+password and SSO, password reset, rate limiting, concurrent session limits, idle timeout, session revocation, and full auth event logging. What remains are email notifications, bulk import, visual polish, and email verification — the gaps that separate a secure working platform from a fully polished product. Any organisation willing to work within those current limitations could use it today for real exams.
 
 ---
 
-*Last updated: March 2026*
+*Last updated: 2026-03-29 — Security features marked as done (password reset, rate limiting, session management, audit logging).*

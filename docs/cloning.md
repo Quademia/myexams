@@ -88,57 +88,19 @@ This is the fixed GUID Microsoft uses for the consumer tenant. Do not change it 
 
 ### 1.5 D1 Database Setup
 
-When cloning to a new environment, the NextAuth tables must be created alongside the standard schema. Run these against the new D1 database:
-```sql
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT NOT NULL PRIMARY KEY,
-  name TEXT,
-  email TEXT UNIQUE,
-  emailVerified INTEGER,
-  image TEXT
-);
+When cloning to a new environment, paste the entire contents of `db/schema.sql` into the D1 query pane and run it. This is the single source of truth for the database schema — it creates all tables, indexes, and is kept up to date whenever the schema changes.
 
-CREATE TABLE IF NOT EXISTS accounts (
-  id TEXT NOT NULL PRIMARY KEY,
-  userId TEXT NOT NULL,
-  type TEXT NOT NULL,
-  provider TEXT NOT NULL,
-  providerAccountId TEXT NOT NULL,
-  refresh_token TEXT,
-  access_token TEXT,
-  expires_at INTEGER,
-  token_type TEXT,
-  scope TEXT,
-  id_token TEXT,
-  session_state TEXT,
-  FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
-);
+**Key tables created by schema.sql:**
+- `qa_users` — platform users (this is the app's user table, NOT NextAuth's `users` table)
+- `users`, `accounts`, `sessions`, `verification_tokens` — NextAuth tables (with QAcademy audit columns added to `sessions` and `verification_tokens`)
+- `auth_events` — login attempt audit log (used by rate limiting)
+- `password_reset_log` — password reset request audit log (used by rate limiting)
+- All exam, course, sitting, and question bank tables
 
-CREATE TABLE IF NOT EXISTS sessions (
-  id TEXT NOT NULL PRIMARY KEY,
-  sessionToken TEXT NOT NULL UNIQUE,
-  userId TEXT NOT NULL,
-  expires INTEGER NOT NULL,
-  FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS verification_tokens (
-  identifier TEXT NOT NULL,
-  token TEXT NOT NULL,
-  expires INTEGER NOT NULL,
-  PRIMARY KEY (identifier, token),
-  -- The following columns are QAcademy additions — NOT part of the NextAuth schema.
-  -- NextAuth does not know about them and never writes to them.
-  -- All are nullable so NextAuth inserts are unaffected.
-  created_at TEXT,
-  ip_address TEXT,
-  used_at TEXT,
-  used_ip_address TEXT,
-  invalidated_at TEXT
-);
-```
-
-**Note:** The platform user table is `qa_users` — not `users`. The `users` table above belongs to NextAuth. Do not confuse the two.
+**Important notes:**
+- The `sessions` table has QAcademy-specific columns (`qa_user_id`, `created_at`, `last_seen_at`, `absolute_expires_at`, `expired_at`, `expiry_reason`, `ip_hash`, `ua_parsed`) that NextAuth does not write to — QAcademy manages these for concurrent session limits and session revocation
+- The `verification_tokens` table has QAcademy audit columns (`created_at`, `ip_address`, `used_at`, `used_ip_address`, `invalidated_at`) — all nullable so NextAuth inserts are unaffected
+- Do not confuse `qa_users` (platform users) with `users` (NextAuth identity records)
 
 ---
 
@@ -157,4 +119,4 @@ CREATE TABLE IF NOT EXISTS verification_tokens (
 
 ---
 
-*Last updated: 2026-03-28 — Password reset flow complete and verified.*
+*Last updated: 2026-03-29 — D1 setup simplified to reference schema.sql, security tables documented.*

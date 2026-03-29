@@ -123,14 +123,16 @@ A single email input form. On submit always shows: "If that email is registered 
 
 **Server action logic:**
 1. Look up email in `qa_users` where `status = 'ACTIVE'`
-2. If not found — stop silently, show success message
-3. Rate limit check — if an unused, unexpired, non-invalidated token for this email was created in the last 10 minutes, stop silently
+2. If not found — log to `password_reset_log` with status `NO_USER`, show success message silently
+3. Rate limit check via `checkResetRateLimit()` in `src/lib/reset-log.ts` — 1 request in 10 min or 3 in 24 hr blocks silently. Logged to `password_reset_log` with status `RATE_LIMITED` or `RATE_LIMITED_24H`
 4. Invalidate any existing unused, non-invalidated tokens for this email — set `invalidated_at = now()`
 5. Generate raw token: `crypto.randomUUID() + crypto.randomUUID()` (no hyphens)
 6. Hash token with SHA-256 via `sha256Hex()` from `src/lib/auth.ts` — store hash in DB, send raw in URL
-7. Insert into `verification_tokens`: identifier=email, token=hash, expires=Unix+3600, created_at, ip_address
-8. Send email via Resend from `noreply@qacademynurses.com` with reset link pointing to `/reset-password?token={raw}&email={encoded}`
-9. Link expires in 1 hour and is single-use only
+7. Hash requester's IP with SHA-256 for privacy (consistent with auth_events approach)
+8. Insert into `verification_tokens`: identifier=email, token=hash, expires=Unix+3600, created_at, ip_address (hashed)
+9. Send email via Resend from `noreply@qacademynurses.com` with reset link pointing to `/reset-password?token={raw}&email={encoded}`
+10. Log to `password_reset_log` with status `EMAIL_SENT` and token hash (never raw token)
+11. Link expires in 1 hour and is single-use only
 
 ---
 
@@ -150,24 +152,122 @@ Receives `?token=&email=` from the email link. Shows a form with new password an
    - `expires < Math.floor(Date.now() / 1000)` → "This reset link has expired. Please request a new one."
 5. Hash new password: `pbkdf2Hex(password + "|" + APP_SECRET, randomSaltHex(), 40000)`
 6. Update `qa_users`: new password_hash, password_salt, password_iter=40000, updated_at
-7. Mark token as used: `SET used_at = now(), used_ip_address = {ip}`
-8. Redirect to `/login?message=password-reset`
+7. Expire all active sessions for this user via `expireAllUserSessions()` with reason `"password_reset"` — forces re-login on all devices
+8. Mark token as used: `SET used_at = now(), used_ip_address = {ip_hash}` (IP hashed with SHA-256)
+9. Update `password_reset_log` to append " | password_changed" to the matching row
+10. Redirect to `/login?message=password-reset`
 
 ---
 
 ### Business rules
 - Token is stored hashed in DB, raw value only ever exists in the email link and the URL — never stored plain
+- Token hash also stored in `password_reset_log` (never raw) — DB breach cannot expose reset links from either table
 - One-use enforced via `used_at` — token row is never deleted (kept for audit)
 - Old tokens killed by newer requests via `invalidated_at` — distinguishes "used legitimately" vs "superseded"
-- Rate limit: one token per email per 10 minutes — prevents inbox flooding
+- Rate limit via `password_reset_log`: 1 request in 10 min or 3 in 24 hr — prevents inbox flooding
 - Account enumeration protection: success message always shown regardless of email existence
-- IP addresses captured at both request time (`ip_address`) and use time (`used_ip_address`) for audit trail
+- IP addresses hashed with SHA-256 before storage at both request time (`ip_address`) and use time (`used_ip_address`) — consistent with auth_events privacy approach
+- All sessions expired on password reset — compromised sessions are killed immediately
 - `verification_tokens` extra columns (`created_at`, `ip_address`, `used_at`, `used_ip_address`, `invalidated_at`) are QAcademy additions — NextAuth does not touch them
+
+### Database tables touched
+- `qa_users` — read (look up user), write (update password hash)
+- `verification_tokens` — read (validate token), write (create token, mark used, invalidate old tokens)
+- `password_reset_log` — write (log every request attempt and outcome)
+- `sessions` — write (expire all active sessions on password reset)
 
 ---
 
+## Login — `/login`
+
+**File:** `src/app/(auth)/login/page.tsx`
+**Who can access:** Public — no session required.
+**Purpose:** Sign in with email + password, Google SSO, or Microsoft SSO.
+
+### What the user sees
+1. **Email + password form** — email and password fields, submit button, "Forgot your password?" link
+2. **SSO buttons** — "Sign in with Google" and "Sign in with Microsoft"
+3. **Error banners** — shown for wrong credentials, rate limiting, no account (SSO), max sessions reached
+4. **Success banner** — green banner after password reset (`?message=password-reset`)
+
+### Server action logic (email + password)
+1. Derive request metadata (IP hash, UA hash, country) from Cloudflare headers via `getRequestMeta()`
+2. Look up user in `qa_users` by email — needed for rate limiting (only `id`, not password fields)
+3. Check rate limits via `checkLoginRateLimit()` — 5 failures in 10 min or 10 in 24 hr blocks login
+4. If blocked — log to `auth_events`, redirect to `/login?error=TooManyAttempts`
+5. Call `signIn("credentials")` — NextAuth runs `authorize()` in `src/auth.ts` which does the single PBKDF2 hash+compare
+6. Password verification happens only once in `authorize()` — never duplicated in the login action
+7. On failure — log to `auth_events`, redirect to `/login?error=CredentialsSignin`
+
+### SSO flow
+- Google/Microsoft buttons call `signIn("google")` or `signIn("microsoft-entra-id")` which redirects to the OAuth provider
+- After OAuth round-trip, the `signIn` callback in `src/auth.ts` checks if the email exists in `qa_users`. Unregistered emails are rejected with `/login?error=NoAccount`
+- Concurrent session limit (max 2) is checked for all login types
+- Auth events are logged for both success and failure
+
+### Business rules
+- Rate limiting checks three dimensions independently: identifier (email), IP hash, and user ID
+- If IP hash is null (no Cloudflare headers), the IP dimension is skipped — identifier and user dimensions still protect
+- Concurrent session limit: max 2 active sessions per user. Blocked attempts logged with error code `max_sessions_reached`
+- All auth events logged fire-and-forget — logging failure never blocks login
+
+### Database tables touched
+- `qa_users` — read (user lookup for rate limiting)
+- `auth_events` — read (rate limit counts), write (log every attempt)
+- `sessions` — read (count active sessions), write (create session row on success, create+expire for blocked audit trail)
+
+---
+
+## Logout — `/logout`
+
+**File:** `src/app/(auth)/logout/route.ts`
+**Who can access:** Any authenticated user.
+**Purpose:** End the session cleanly — expire the D1 session row and clear the JWT cookie.
+
+### What happens
+1. Read `session_token` from the current JWT
+2. Get D1 binding via `getCloudflareContext()`
+3. Expire the D1 session row via `expireSession()` with reason from URL param (e.g. `"logout"`, `"idle_timeout"`)
+4. Call NextAuth `signOut()` to delete the JWT cookie
+5. Redirect to `/login`
+
+### Business rules
+- The D1 session row is expired so it no longer counts toward the concurrent session limit
+- The reason parameter allows distinguishing between manual logout, idle timeout, and other causes in the audit trail
+
+---
+
+## Idle Timeout — Client-Side Component
+
+**File:** `src/components/ui/IdleTimeout.tsx`
+**Who can access:** All authenticated users (rendered in root layout for every page).
+**Purpose:** Auto-logout inactive users with a warning countdown.
+
+### How it works
+1. On mount, checks `data-authed` attribute on `<body>` (set by `layout.tsx`) — renders nothing if not logged in
+2. Starts idle timer (2 min for testing, 28 min for production)
+3. Listens for activity events: mousemove, mousedown, keydown, touchstart, scroll
+4. On activity — resets the timer
+5. When timer expires — shows warning modal with countdown (30 sec for testing, 120 sec for production)
+6. "Stay logged in" button resets everything
+7. Countdown reaches 0 or "Log out now" clicked — navigates to `/logout?reason=idle_timeout`
+
+### Cross-tab sync (BroadcastChannel)
+- Creates a `BroadcastChannel("qa-idle-timeout")` on mount
+- On local activity — broadcasts `{ type: "activity" }` to all tabs
+- On receiving "activity" from another tab — resets idle timer
+- On logout — broadcasts `{ type: "logout" }` before navigating
+- On receiving "logout" from another tab — navigates to `/logout`
+- Channel closed on component unmount
+- Falls back to per-tab behavior if BroadcastChannel is not supported (old browsers)
+
+### Business rules
+- BroadcastChannel only works across tabs in the same browser — not across different browsers or incognito
+- Once the warning modal is showing, local activity does NOT reset the timer — only the "Stay logged in" button does
+- Same browser, same account = one JWT cookie shared by all tabs. The idle timeout prevents a stale tab from being left open indefinitely
+
 ### Login page updates
-- "Forgot your password?" link added below the password field → `/forgot-password`
+- "Forgot your password?" link below the password field → `/forgot-password`
 - Green success banner shown when `?message=password-reset` is in the URL
 
 ---
@@ -737,4 +837,4 @@ Only shown if exam has approval gates configured. Shows per-gate status with app
 
 ---
 
-*More pages will be added to this document as they are reviewed.*
+*More pages will be added to this document as they are reviewed. Last updated: 2026-03-29 — Login, logout, idle timeout, and security features added.*

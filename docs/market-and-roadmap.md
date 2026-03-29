@@ -46,35 +46,35 @@ The migration to the new stack was essential preparation — it cleared architec
 
 ### Must have before any real organisation uses it in production
 
-| Gap | Why it matters |
-|---|---|
-| Authentication overhaul — migrate to NextAuth/Auth.js | Current custom auth lacks password reset, email verification, rate limiting, and SSO. NextAuth replaces it entirely with these features built in, data stays in D1, free forever, no vendor lock-in |
-| Email notifications — results released, exam scheduled | Platform is completely silent — users have no idea anything happened |
-| Proper error handling and user-facing error messages | Pages crash on query failures, users do not know what went wrong |
-| Bulk student/member import from CSV | Schools and organisations have existing data — manual entry is not viable at scale |
+| Gap | Why it matters | Status |
+|---|---|---|
+| ~~Authentication overhaul — migrate to NextAuth/Auth.js~~ | NextAuth v5 with email+password, Google SSO, Microsoft SSO. Password reset, rate limiting, concurrent session limits, idle timeout, session revocation, cross-tab sync, IP hashing, auth event logging — all built | ✅ Done 2026-03-29 |
+| Email notifications — results released, exam scheduled | Platform is completely silent — users have no idea anything happened | |
+| Proper error handling and user-facing error messages | Pages crash on query failures, users do not know what went wrong | |
+| Bulk student/member import from CSV | Schools and organisations have existing data — manual entry is not viable at scale | |
 
 ### Should have before charging money
 
-| Gap | Why it matters |
-|---|---|
-| Email verification on signup | Any email can be used without verification |
-| Email invitations — invite specific people by email address | Controlled, audited onboarding. Only that person can use the link. Complements join codes which are better for bulk open enrolment. Requires bulk CSV import to be practical at scale. |
-| Aggregate reporting — class averages, question performance, cohort comparisons | Schools and organisations make curriculum and training decisions from this data |
-| Data export per tenant | Organisations must be able to take their data if they leave |
-| Self-service school/organisation signup | Currently only a system admin can create a new tenant — not scalable |
-| Certificate or downloadable result on pass | Expected by almost every non-school context |
-| Account lockout after failed login attempts | Basic security requirement |
+| Gap | Why it matters | Status |
+|---|---|---|
+| Email verification on signup | Any email can be used without verification | |
+| Email invitations — invite specific people by email address | Controlled, audited onboarding. Only that person can use the link. Complements join codes which are better for bulk open enrolment. Requires bulk CSV import to be practical at scale. | |
+| Aggregate reporting — class averages, question performance, cohort comparisons | Schools and organisations make curriculum and training decisions from this data | |
+| Data export per tenant | Organisations must be able to take their data if they leave | |
+| Self-service school/organisation signup | Currently only a system admin can create a new tenant — not scalable | |
+| Certificate or downloadable result on pass | Expected by almost every non-school context | |
+| ~~Account lockout after failed login attempts~~ | Rate limiting built: 5 failures in 10 min or 10 in 24 hr blocks login across identifier, IP, and user dimensions | ✅ Done 2026-03-29 |
 
 ### Nice to have for competitive positioning
 
-| Gap | Why it matters |
-|---|---|
-| Audit trail — who changed what and when | Required by formal exam bodies and regulated industries |
-| Session management — view and revoke active sessions | Security and compliance |
-| Usage limits and plan management | Commercial readiness — prevent abuse, enable pricing tiers |
-| Advanced analytics — trends over time, cohort comparisons | Differentiator for serious institutional clients |
-| Proctoring — basic anti-cheat, copy-paste prevention | Expected by high-stakes exam contexts |
-| Accessibility — screen reader support, keyboard navigation | Required by many institutions and public sector organisations |
+| Gap | Why it matters | Status |
+|---|---|---|
+| ~~Audit trail — who changed what and when~~ | `auth_events` and `password_reset_log` tables log every login attempt and password reset with IP hash, UA, timestamp, and outcome. Partial — covers auth only, not data changes | Partial ✅ |
+| ~~Session management — view and revoke active sessions~~ | D1 session tracking with concurrent limits (max 2), session revocation on password reset, idle timeout with cross-tab sync | ✅ Done 2026-03-29 |
+| Usage limits and plan management | Commercial readiness — prevent abuse, enable pricing tiers | |
+| Advanced analytics — trends over time, cohort comparisons | Differentiator for serious institutional clients | |
+| Proctoring — basic anti-cheat, copy-paste prevention | Expected by high-stakes exam contexts | |
+| Accessibility — screen reader support, keyboard navigation | Required by many institutions and public sector organisations | |
 
 ---
 
@@ -140,9 +140,9 @@ This is not a rigid plan — priorities will shift based on real user feedback. 
 
 ### Stage 1 — Production readiness (current focus)
 Make the platform safe and complete enough for real organisations to use:
-- Password reset
+- ~~Password reset~~ ✅ Done
+- ~~Rate limiting and basic security hardening~~ ✅ Done (login rate limiting, password reset rate limiting, concurrent session limits, idle timeout, session revocation, auth event logging, IP hashing)
 - Email notifications (results, exam schedule, approval requests)
-- Rate limiting and basic security hardening
 - Error handling and user-facing messages
 - Email invitations — invite specific people by email address with single-use links tied to that person
 - Bulk CSV import — upload a spreadsheet of members, send all invites in one action
@@ -196,15 +196,14 @@ Moodle — the platform most schools currently use — requires teachers and adm
 
 ## Authentication Strategy
 
-### Decision: NextAuth/Auth.js
+### Decision: NextAuth/Auth.js — IMPLEMENTED
 
-After evaluating custom auth improvements, Clerk, Better Auth, and NextAuth, the decision is to migrate to NextAuth/Auth.js.
+NextAuth v5 (Auth.js) is fully implemented and running in production.
 
-**Why NextAuth:**
+**Why NextAuth was chosen:**
 - Data stays entirely in our own Cloudflare D1 database — no third party stores user data. Important for school trust.
 - Free forever with no organisation or user limits — QAcademy can grow to any scale with zero auth cost
 - Google SSO and Microsoft SSO built in — schools using Google Workspace or Microsoft 365 can log in with existing accounts
-- Password reset, email verification, rate limiting, and session management all built in
 - No vendor lock-in — if NextAuth ever becomes unsuitable, migration is straightforward since data is in our own DB
 - Works on Cloudflare Workers + OpenNext — documented workarounds exist and are solved
 
@@ -215,29 +214,28 @@ After evaluating custom auth improvements, Clerk, Better Auth, and NextAuth, the
 
 **The two-table pattern:**
 NextAuth handles identity — who you are (email, password, OAuth tokens, verified status).
-Our existing users table handles platform context — name, is_system_admin, status, memberships, roles, active tenant.
-They link via an `auth_id` foreign key on our users table. This is the same pattern used by Supabase and all major auth services.
+`qa_users` handles platform context — name, is_system_admin, status, memberships, roles, active tenant.
+They link via an `auth_id` foreign key on `qa_users`. This is the same pattern used by Supabase and all major auth services.
 
-**What NextAuth gives us immediately:**
-- Password reset flow
-- Email verification on signup
-- Google SSO
-- Microsoft SSO
-- Rate limiting hooks
-- Session management with revocation
-- Pre-built Next.js integration
+**What has been built on top of NextAuth:**
+- ✅ Email + password login (PBKDF2 + pepper)
+- ✅ Google SSO and Microsoft SSO (personal accounts)
+- ✅ Password reset flow (hashed tokens, single-use, 1-hour expiry, email via Resend)
+- ✅ Login rate limiting (5 failures in 10 min or 10 in 24 hr, across identifier/IP/user)
+- ✅ Password reset rate limiting (1 in 10 min or 3 in 24 hr)
+- ✅ Concurrent session limits (max 2 active sessions per user)
+- ✅ Session revocation on password reset (all devices forced to re-login)
+- ✅ Idle timeout with cross-tab sync (BroadcastChannel)
+- ✅ Auth event logging (every login attempt logged to `auth_events`)
+- ✅ Password reset logging (every request logged to `password_reset_log`)
+- ✅ IP privacy (all IPs SHA-256 hashed before storage)
+- Still needed: email verification on signup
 
 **Known considerations:**
 - Requires async `getCloudflareContext` pattern — documented fix exists (OpenNext issue #435, resolved March 2025)
-- Use JWT session strategy in edge contexts, database sessions elsewhere
-- Official D1 adapter: `@auth/d1-adapter` creates 4 tables alongside existing schema
-- Cloudflare has a full tutorial: developers.cloudflare.com/developer-spotlight/tutorials/fullstack-authentication-with-next-js-and-cloudflare-d1/
-
-**When to build:**
-This is the next major piece of work after the current planning and documentation session. It replaces the entire current auth system in `src/lib/auth.ts` and the auth pages in `src/app/(auth)/`. The exam engine, grading, sittings, approval gates, and all other features are unaffected — only the identity and session layer changes.
-
-**Migration note:**
-Current test users can be cleared — there are no real users to preserve. Start fresh with NextAuth.
+- JWT session strategy required on Cloudflare Workers (no persistent DB connections for database sessions)
+- D1 session rows used for concurrent limits and revocation — the jwt callback checks `isSessionExpired()` on every request
+- Closure variable bridges `signIn` → `jwt` callbacks to pass IP/UA metadata (headers not available in jwt callback on Workers)
 
 ---
 
@@ -271,4 +269,4 @@ Roadmap: email invitations first, bulk CSV import second.
 
 ---
 
-*Last updated: 2026-03-28*
+*Last updated: 2026-03-29 — Authentication strategy marked as implemented, security gaps closed.*

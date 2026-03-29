@@ -61,12 +61,19 @@ src/
   lib/
     db.ts           ← D1 database helpers (first, all, run)
     auth.ts         ← getAuth, requireAuth, pickActiveMembership, setActiveTenant, crypto helpers
+    auth-events.ts  ← login attempt logging + rate limiting (auth_events table)
+    sessions.ts     ← D1 session tracking — create, count, expire, revocation check
+    reset-log.ts    ← password reset request logging + rate limiting
     env.ts          ← Cloudflare environment variable access
 
   auth.ts           ← NextAuth v5 config — Credentials, Google, Microsoft providers
 
+  components/
+    ui/
+      IdleTimeout.tsx ← client-side idle timeout with cross-tab sync
+
   types/
-    next-auth.d.ts  ← NextAuth type extensions (session.user.id, active_tenant_id)
+    next-auth.d.ts  ← NextAuth type extensions (session.user.id, active_tenant_id, session_token)
 
 db/
   schema.sql        ← Reference schema
@@ -96,17 +103,31 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - NextAuth manages identity via JWT cookies — no database session lookup on every request
 - `src/auth.ts` — NextAuth config with Credentials, Google, and Microsoft Entra ID providers
 - `src/lib/auth.ts` — platform auth helpers (`getAuth`, `requireAuth`, `pickActiveMembership`, `setActiveTenant`) — same function names and return types as before, now backed by NextAuth
-- Credentials provider checks passwords against `qa_users` using PBKDF2 + APP_SECRET pepper
+- Credentials provider checks passwords against `qa_users` using PBKDF2 + APP_SECRET pepper (single hash in `authorize()` — never duplicated)
 - Google/Microsoft SSO auto-creates a `qa_users` row on first login via the `signIn` callback
 - `active_tenant_id` (current school) is stored as a custom field in the JWT and updated via `unstable_update`
 
-### NextAuth tables in D1
+### Session tracking & security
+- **D1 session rows** — every successful login creates a row in `sessions` with `qa_user_id`, `created_at`, `last_seen_at`, `absolute_expires_at`, IP hash, and parsed User-Agent. `last_seen_at` is set once at login (not continuously updated)
+- **Concurrent session limit** — max 2 active sessions per user. Checked in the `signIn` callback before allowing login. Blocked attempts are logged and a session row is created then immediately expired for audit trail
+- **Session revocation** — the `jwt` callback checks `isSessionExpired()` on every request. If the D1 row was force-expired (e.g. by password reset), the JWT is gutted and the user is redirected to `/login`
+- **Password reset kills all sessions** — `expireAllUserSessions()` marks all active D1 rows as expired with reason `"password_reset"`, forcing re-login on all devices
+- **Idle timeout** — client-side `IdleTimeout` component monitors activity (mouse, keyboard, touch, scroll). Shows a warning modal before auto-logout. Uses `BroadcastChannel` for cross-tab sync so activity in one tab keeps other tabs alive
+- **Login rate limiting** — `checkLoginRateLimit()` counts failed attempts across three dimensions (identifier, IP hash, user ID) in two windows: 5 failures in 10 min or 10 in 24 hr blocks login
+- **Password reset rate limiting** — `checkResetRateLimit()` blocks after 1 request in 10 min or 3 in 24 hr
+- **Auth event logging** — every login attempt (success, failure, SSO) is logged to `auth_events` with timestamp, IP hash, User-Agent, error code, and outcome. All logging is fire-and-forget — never blocks auth
+- **Password reset logging** — every reset request is logged to `password_reset_log` with hashed token, IP hash, and status
+- **Privacy** — IPs are always SHA-256 hashed before storage (never raw). User-Agents are parsed to readable format ("Windows 10/11 / Chrome 123") and also hashed for the `ua_hash` column
+
+### Auth tables in D1
 | Table | Purpose |
 |---|---|
 | `users` | NextAuth identity records |
 | `accounts` | Links OAuth providers to users |
-| `sessions` | NextAuth session storage (not actively used with JWT strategy) |
-| `verification_tokens` | Email verification and password reset tokens |
+| `sessions` | D1 session tracking — concurrent limits, revocation, IP/UA metadata |
+| `verification_tokens` | Password reset tokens (SHA-256 hashed) with audit columns |
+| `auth_events` | Login attempt audit log — used for rate limiting |
+| `password_reset_log` | Password reset request audit log — used for rate limiting |
 
 ### Required Cloudflare secrets
 | Secret | Purpose |
@@ -124,16 +145,22 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 ## Database Tables
 
-### Auth tables (NextAuth)
-`users`, `accounts`, `sessions`, `verification_tokens`
+### Auth & security tables
+| Table | Purpose |
+|---|---|
+| `users` | NextAuth identity records |
+| `accounts` | Links OAuth providers to users |
+| `sessions` | D1 session tracking — concurrent limits, revocation, IP/UA metadata |
+| `verification_tokens` | Password reset tokens (hashed) with audit columns |
+| `auth_events` | Login attempt audit log — rate limiting queries |
+| `password_reset_log` | Password reset request audit log — rate limiting queries |
 
 ### Platform tables
 | Table | Purpose |
 |---|---|
-| `qa_users` | Platform users — name, email, password hash, is_system_admin, auth_id, school_email |
+| `qa_users` | Platform users — name, email, password hash, is_system_admin, auth_id |
 | `tenants` | Schools |
 | `memberships` | User ↔ school ↔ role |
-| `sessions` | NextAuth sessions |
 | `courses` | Subjects within a school |
 | `course_teachers` | Teacher ↔ course |
 | `enrollments` | Student ↔ course |
@@ -166,10 +193,10 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 | Route | Description | Status |
 |---|---|---|
 | `/` | Smart redirect — role-based routing to correct dashboard | ✅ Verified |
-| `/login` | Email + password + Google SSO + Microsoft SSO + "Forgot your password?" link + green success banner on `?message=password-reset` | ✅ Verified 2026-03-28 |
-| `/forgot-password` | Forgot password — enter email, sends reset link via Resend | ✅ Verified 2026-03-28 |
-| `/reset-password` | Reset password — validates token, updates password in `qa_users` | ✅ Verified 2026-03-28 |
-| `/logout` | Destroys NextAuth session, redirect to login | ✅ Verified 2026-03-28 |
+| `/login` | Email + password + Google SSO + Microsoft SSO + rate limiting + max sessions check + "Forgot your password?" link | ✅ Verified 2026-03-29 |
+| `/forgot-password` | Forgot password — rate limited, token hashed before storage, email sent via Resend | ✅ Verified 2026-03-29 |
+| `/reset-password` | Reset password — validates hashed token, updates password, expires all sessions | ✅ Verified 2026-03-29 |
+| `/logout` | Expires D1 session row, destroys NextAuth JWT cookie, redirects to login | ✅ Verified 2026-03-29 |
 | `/setup` | First-time platform setup — creates System Admin | ✅ Verified 2026-03-26 |
 | `/profile` | View profile, change password | ✅ Verified |
 | `/no-access` | Shown when user has no school memberships | ✅ Verified |
@@ -264,6 +291,12 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - **Azure Client Secret — copy the Value, not the ID** — they look similar in the Azure portal
 - **All commits go directly to `master`** — never create a new branch
 - **GitHub Actions builds on Ubuntu** — OpenNext has Windows path issues
+- **Fire-and-forget logging** — all auth event and session writes are wrapped in try/catch. Logging failures must never block login or password reset flows
+- **IPs are always hashed** — SHA-256 before storage, never raw. Consistent across `auth_events`, `sessions`, `verification_tokens`, and `password_reset_log`
+- **Reset tokens are always hashed** — raw token goes in the email link, SHA-256 hash goes in the database. If DB is breached, attacker can't forge reset links
+- **Session revocation via D1 check** — JWT cookies are self-contained, so we check D1 on every request to detect force-expired sessions (password reset, admin action). Lightweight single-row SELECT
+- **Cross-tab idle sync via BroadcastChannel** — activity in any tab resets the idle timer in all tabs (same browser only). Prevents stale-tab logout while user is active elsewhere
+- **Closure variable bridges signIn→jwt callbacks** — the `signIn` callback has access to request headers but the `jwt` callback (which creates the session row) doesn't. A closure variable passes IP/UA metadata between them
 
 ---
 
@@ -271,6 +304,7 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 ### Immediate — Prompt 3
 - ~~Password reset flow — token generated, stored in `verification_tokens`, email sent via Resend, validated on reset page~~ ✅ Done 2026-03-28
+- ~~Session & security hardening — rate limiting, auth event logging, concurrent session limits, idle timeout, session revocation on password reset, cross-tab sync, IP hashing, token hashing~~ ✅ Done 2026-03-29
 - Email verification on signup
 
 ### Immediate — Prompt 4
@@ -287,7 +321,7 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 ### Future
 - Phase 10 — Question Bank bulk CSV import
 - Phase 11 — UI/design polish sprint + PWA installability
-- NextAuth type declarations — extend properly via `next-auth.d.ts` (partially done)
+- ~~NextAuth type declarations — extend properly via `next-auth.d.ts`~~ ✅ Done 2026-03-29 (session.user.id, active_tenant_id, session_token)
 - Microsoft SSO for organisational accounts — requires publisher verification in Azure
 - Toast notifications
 - StudentDrawer and TeacherDrawer components
@@ -296,4 +330,4 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 ---
 
-*Last updated: 2026-03-28 — Password reset flow complete and verified.*
+*Last updated: 2026-03-29 — Session & security hardening complete and verified (rate limiting, session tracking, idle timeout, cross-tab sync, session revocation on password reset).*
