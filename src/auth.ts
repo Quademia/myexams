@@ -155,7 +155,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
       // We use it for three things:
       // 1. Store the user's ID (from qa_users) in the token on first sign-in.
       // 2. Store and update active_tenant_id — the school the user is viewing.
-      // 3. On sign-in: check concurrent session limit and create a session row.
+      // 3. On sign-in: create a session row in D1 (count check is in signIn callback).
       //
       // The "trigger" parameter tells us WHY the callback is running:
       // - "signIn": user just logged in → set initial values + session tracking
@@ -178,11 +178,12 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           token.session_token = null;
         }
 
-        // On sign-in: check concurrent session limit and create session row.
-        // We use user?.id && !token.session_token instead of trigger === "signIn"
-        // because the trigger value is unreliable on Cloudflare Workers with
-        // the credentials provider. This fires the first time the jwt callback
-        // runs with a user present and no session token already stored.
+        // On sign-in: create a session row in D1.
+        // The concurrent session limit is checked in the signIn callback (which
+        // runs before jwt). By the time we get here, we know the count is under
+        // the limit. We use user?.id && !token.session_token instead of
+        // trigger === "signIn" because the trigger value is unreliable on
+        // Cloudflare Workers with the credentials provider.
         if (user?.id && !token.session_token) {
           try {
             // Look up the qa_users.id by email — this is correct for ALL login types.
@@ -193,20 +194,8 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
               .bind(user.email)
               .first<{ id: string }>();
 
-            // If we can't find the qa_users row, fall back to user.id.
-            // This should never happen in practice since the signIn callback
-            // already rejects unregistered emails.
             const qaUserId = qaUserRow?.id ?? user.id;
 
-            // Check how many active sessions this user already has.
-            const activeCount = await countActiveSessions(env.DB, qaUserId);
-
-            if (activeCount >= 2) {
-              // Too many sessions — throw so NextAuth redirects to error page.
-              throw new Error("MaxSessionsReached");
-            }
-
-            // Under the limit — create a session row in D1.
             const sessionToken = crypto.randomUUID();
             const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 min for testing — match maxAge above
             const absoluteExpiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
@@ -219,12 +208,8 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
             });
 
             token.session_token = sessionToken;
-          } catch (err: unknown) {
-            // Re-throw MaxSessionsReached — this must block login.
-            // Swallow everything else — session tracking must never break auth.
-            if (err instanceof Error && err.message === "MaxSessionsReached") {
-              throw err;
-            }
+          } catch {
+            // Fire-and-forget — session tracking must never break auth.
           }
         }
 
@@ -314,6 +299,27 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           } catch {
             // Fire-and-forget — logging must never block SSO login.
           }
+        }
+
+        // Temporary diagnostic log — remove after testing.
+        console.log("signIn callback fired for provider:", account?.provider ?? "credentials");
+
+        // Check concurrent session limit for ALL login types.
+        // We look up qa_users by email since user.id may be NextAuth's id for SSO.
+        try {
+          const qaUserRow = await env.DB
+            .prepare("SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'")
+            .bind(user.email)
+            .first<{ id: string }>();
+
+          if (qaUserRow) {
+            const activeCount = await countActiveSessions(env.DB, qaUserRow.id);
+            if (activeCount >= 2) {
+              return "/login?error=MaxSessionsReached";
+            }
+          }
+        } catch {
+          // Fire-and-forget — never block login because of a session count failure.
         }
 
         // Returning true means "allow the sign-in to proceed".
