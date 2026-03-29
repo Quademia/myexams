@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { auth } from "@/auth";
 import { IdleTimeout } from "@/components/ui/IdleTimeout";
 
 // This is the root layout — it wraps every page in the app.
@@ -11,14 +12,20 @@ export const metadata: Metadata = {
   description: "QAcademy Beta",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await auth();
+  const isAuthed = !!session?.user;
+
   return (
     <html lang="en">
-      <body className="bg-gray-50 text-gray-900 font-sans">
+      <body
+        className="bg-gray-50 text-gray-900 font-sans"
+        data-authed={isAuthed ? "true" : "false"}
+      >
         <IdleTimeout />
         {children}
       </body>

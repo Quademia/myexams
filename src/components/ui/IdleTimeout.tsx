@@ -3,8 +3,9 @@
 // warning modal before automatically logging out inactive users.
 //
 // HOW IT WORKS:
-// 1. On mount, checks if the user is logged in (by looking for the NextAuth
-//    session cookie). If no cookie — renders nothing.
+// 1. On mount, checks if the user is logged in by reading the data-authed
+//    attribute on the <body> element (set server-side by layout.tsx).
+//    If not authed — renders nothing. User is not logged in.
 // 2. Starts an idle timer (2 minutes for testing — production will be 28 min).
 // 3. Listens for activity events (mouse, keyboard, touch, scroll) and resets
 //    the timer on each event.
@@ -25,16 +26,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000;  // 2 minutes idle before warning
 const WARNING_SECONDS = 30;              // 30 second countdown in warning modal
 
-// --- Cookie check ---
-// NextAuth sets one of these cookies depending on whether the site uses HTTPS.
-function hasSessionCookie(): boolean {
-  if (typeof document === "undefined") return false;
-  return (
-    document.cookie.includes("next-auth.session-token") ||
-    document.cookie.includes("__Secure-next-auth.session-token")
-  );
-}
-
 // --- Activity events to listen for ---
 const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
   "mousemove",
@@ -45,8 +36,6 @@ const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
 ];
 
 export function IdleTimeout() {
-  console.log("IdleTimeout component rendered");
-
   const [showWarning, setShowWarning] = useState(false);
   const [countdown, setCountdown] = useState(WARNING_SECONDS);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -102,12 +91,11 @@ export function IdleTimeout() {
     resetIdleTimer();
   }, [resetIdleTimer]);
 
-  // Check for session cookie on mount.
+  // Check for auth state on mount via data-authed body attribute.
   useEffect(() => {
-    console.log("IdleTimeout useEffect running");
-    console.log("hasSessionCookie result:", hasSessionCookie());
-    console.log("document.cookie value:", document.cookie);
-    setIsLoggedIn(hasSessionCookie());
+    const isAuthed = document.body.getAttribute("data-authed") === "true";
+    if (!isAuthed) return;
+    setIsLoggedIn(true);
   }, []);
 
   // Set up activity listeners and idle timer when logged in.
