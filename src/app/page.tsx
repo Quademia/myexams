@@ -1,8 +1,13 @@
 // src/app/page.tsx
 // Root page — shows landing page if not logged in, redirects to dashboard if logged in.
+//
+// IMPORTANT: Do NOT call setActiveTenant() here. It calls unstable_update()
+// which makes an internal HTTP subrequest — this crashes on Cloudflare Workers
+// when called from a Server Component. Instead we redirect to /switch-school
+// which handles setActiveTenant() safely in a Route Handler context.
 
 import { redirect } from "next/navigation";
-import { getAuth, pickActiveMembership, setActiveTenant } from "@/lib/auth";
+import { getAuth, pickActiveMembership } from "@/lib/auth";
 
 export default async function Home() {
   const auth = await getAuth();
@@ -16,12 +21,7 @@ export default async function Home() {
 
     if (!active) {
       if (auth.memberships.length === 1) {
-        await setActiveTenant(auth.memberships[0].tenant_id);
-        const role = auth.memberships[0].role;
-        if (role === "SCHOOL_ADMIN") redirect("/school");
-        if (role === "TEACHER") redirect("/teacher");
-        if (role === "STUDENT") redirect("/student");
-        redirect("/no-access");
+        redirect(`/switch-school?tenant_id=${auth.memberships[0].tenant_id}`);
       }
       redirect("/choose-school");
     }
@@ -49,13 +49,13 @@ export default async function Home() {
           <span className="text-sm font-semibold tracking-wide text-gray-400">QAcademy</span>
         </div>
         <div className="flex gap-3">
-          <a
+          
             href="/join"
             className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
           >
             Join with Code
           </a>
-          <a
+          
             href="/login"
             className="px-4 py-2 text-sm font-semibold text-gray-950 bg-gradient-to-r from-teal-400 to-cyan-400 rounded-lg hover:from-teal-300 hover:to-cyan-300 transition-all shadow-lg shadow-teal-500/20"
           >
@@ -85,7 +85,7 @@ export default async function Home() {
         </p>
 
         <div className="flex justify-center gap-4">
-          <a
+          
             href="/login"
             className="group relative px-8 py-3 text-base font-bold text-gray-950 bg-gradient-to-r from-teal-400 to-cyan-400 rounded-xl hover:from-teal-300 hover:to-cyan-300 transition-all shadow-xl shadow-teal-500/25 hover:shadow-teal-500/40"
           >
@@ -93,7 +93,7 @@ export default async function Home() {
             <span className="absolute inset-0 rounded-xl bg-teal-400/20 blur-xl group-hover:bg-teal-400/30 transition-all" />
             <span className="relative">Get Started</span>
           </a>
-          <a
+          
             href="/join"
             className="px-8 py-3 text-base font-semibold text-gray-300 border border-gray-700 rounded-xl hover:border-gray-500 hover:text-white transition-all"
           >
