@@ -108,8 +108,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   expired_at          TEXT,            -- ISO 8601 when session was ended (NULL = active)
   expiry_reason       TEXT,            -- why it ended: "logout" | "superseded" | "expired"
   ip_hash             TEXT,            -- SHA-256 of IP at login
-  ua_parsed           TEXT,            -- e.g. "Windows 10/11 / Chrome 123"
-  FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+  ua_parsed           TEXT             -- e.g. "Windows 10/11 / Chrome 123"
+  -- Note: userId foreign key removed — NextAuth does not write to this table
+  -- with JWT strategy. QAcademy manages this table directly for session tracking.
+  -- userId is kept for schema compatibility but is not used — qa_user_id is the
+  -- authoritative link to qa_users.id.
 );
 
 -- Tokens for email verification and password reset.
@@ -636,6 +639,16 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_log_email ON password_reset_log(em
 -- ALTER TABLE sessions ADD COLUMN expiry_reason TEXT;
 -- ALTER TABLE sessions ADD COLUMN ip_hash TEXT;
 -- ALTER TABLE sessions ADD COLUMN ua_parsed TEXT;
+-- CREATE INDEX IF NOT EXISTS idx_sessions_qa_user_id ON sessions(qa_user_id, expired_at);
+
+-- Session foreign key removal — 2026-03-29:
+-- Recreated sessions table without FOREIGN KEY (userId) REFERENCES users(id).
+-- The foreign key caused INSERT failures because QAcademy writes qa_users.id
+-- into userId, which doesn't exist in NextAuth's users table.
+-- ALTER TABLE sessions RENAME TO sessions_old;
+-- CREATE TABLE sessions (... without FOREIGN KEY ...);
+-- INSERT INTO sessions SELECT ... FROM sessions_old;
+-- DROP TABLE sessions_old;
 -- CREATE INDEX IF NOT EXISTS idx_sessions_qa_user_id ON sessions(qa_user_id, expired_at);
 
 -- Audit & security tables — 2026-03-28:

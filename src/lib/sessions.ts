@@ -15,7 +15,7 @@
 
 // ---------- createSession ----------
 // Writes one row to sessions when a user logs in.
-// DEBUG: try/catch removed to expose errors.
+// Fire-and-forget wrapped in try/catch — never throws.
 
 interface CreateSessionParams {
   sessionToken: string;
@@ -25,43 +25,52 @@ interface CreateSessionParams {
 }
 
 export async function createSession(db: D1Database, params: CreateSessionParams): Promise<void> {
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const expiresUnix = Math.floor(new Date(params.absoluteExpiresAt).getTime() / 1000);
+  try {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const expiresUnix = Math.floor(new Date(params.absoluteExpiresAt).getTime() / 1000);
 
-  await db.prepare(
-    `INSERT INTO sessions
-       (id, sessionToken, userId, expires,
-        qa_user_id, created_at, last_seen_at, absolute_expires_at,
-        expired_at, expiry_reason, ip_hash, ua_parsed)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`
-  ).bind(
-    id,
-    params.sessionToken,
-    params.qaUserId,
-    expiresUnix,
-    params.qaUserId,
-    now,
-    now,
-    params.absoluteExpiresAt,
-    params.meta.ipHash,
-    params.meta.uaParsed,
-  ).run();
+    await db.prepare(
+      `INSERT INTO sessions
+         (id, sessionToken, userId, expires,
+          qa_user_id, created_at, last_seen_at, absolute_expires_at,
+          expired_at, expiry_reason, ip_hash, ua_parsed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`
+    ).bind(
+      id,
+      params.sessionToken,
+      "",                    // userId — empty string, not used; qa_user_id is authoritative
+      expiresUnix,
+      params.qaUserId,
+      now,
+      now,
+      params.absoluteExpiresAt,
+      params.meta.ipHash,
+      params.meta.uaParsed,
+    ).run();
+  } catch {
+    // Fire-and-forget — session tracking must never break auth.
+  }
 }
 
 // ---------- countActiveSessions ----------
 // Counts sessions for a user that are still active:
 //   - expired_at IS NULL (not manually expired)
 //   - absolute_expires_at > now (not past hard expiry)
-// DEBUG: try/catch removed to expose errors.
+// Returns 0 on error.
 
 export async function countActiveSessions(db: D1Database, qaUserId: string): Promise<number> {
-  const now = new Date().toISOString();
-  const row = await db.prepare(
-    `SELECT COUNT(*) AS cnt FROM sessions
-     WHERE qa_user_id = ? AND expired_at IS NULL AND absolute_expires_at > ?`
-  ).bind(qaUserId, now).first<{ cnt: number }>();
-  return row?.cnt ?? 0;
+  try {
+    const now = new Date().toISOString();
+    const row = await db.prepare(
+      `SELECT COUNT(*) AS cnt FROM sessions
+       WHERE qa_user_id = ? AND expired_at IS NULL AND absolute_expires_at > ?`
+    ).bind(qaUserId, now).first<{ cnt: number }>();
+    return row?.cnt ?? 0;
+  } catch {
+    // If count fails, return 0 — don't block logins because of a table issue.
+    return 0;
+  }
 }
 
 // ---------- expireSession ----------

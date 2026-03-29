@@ -208,9 +208,12 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
             });
 
             token.session_token = sessionToken;
-          } catch (err) {
-            // Re-throw ALL errors including MaxSessionsReached — DEBUG diagnostic
-            throw err;
+          } catch (err: unknown) {
+            // Re-throw MaxSessionsReached — this must block login.
+            // Swallow everything else — session tracking must never break auth.
+            if (err instanceof Error && err.message === "MaxSessionsReached") {
+              throw err;
+            }
           }
         }
 
