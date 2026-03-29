@@ -16,8 +16,8 @@
 //   2. Look up the user in qa_users to get user_id (for rate limit check).
 //   3. Check rate limits (5 failures in 10 min or 10 in 24 hr → blocked).
 //   4. Log the attempt to auth_events (fire-and-forget).
-// For SSO (Google/Microsoft) we log the initiation with ok=null — the actual
-// success/failure will be logged via the NextAuth signIn callback later.
+// For SSO (Google/Microsoft) logging happens in the NextAuth signIn callback
+// in src/auth.ts after the OAuth round-trip completes.
 
 import { signIn } from "@/auth";
 import { getDb } from "@/lib/db";
@@ -166,50 +166,17 @@ async function loginAction(formData: FormData) {
 }
 
 // Server Action for Google SSO.
-// We log the initiation with ok=null — we can't intercept the OAuth callback
-// result here. Full SSO result logging will be added to the NextAuth signIn
-// callback in src/auth.ts in a future update.
+// Logging happens in the signIn callback in src/auth.ts after the OAuth
+// round-trip completes — not here, because the redirect kills this context.
 async function googleAction() {
   "use server";
-
-  const meta = await getRequestMeta();
-  await logAuthEvent({
-    kind: "LOGIN_GOOGLE",
-    identifier: "google_sso",
-    userId: null,
-    ok: null,
-    errorCode: null,
-    note: "sso_redirect_initiated",
-    tenantId: null,
-    sessionId: null,
-    loginMethodDetail: null,
-    failureCountAtTime: null,
-    meta,
-  });
-
   await signIn("google", { redirectTo: "/" });
 }
 
 // Server Action for Microsoft SSO.
-// Same as Google — log initiation with ok=null, then redirect to Microsoft.
+// Same as Google — logging happens in the signIn callback in src/auth.ts.
 async function microsoftAction() {
   "use server";
-
-  const meta = await getRequestMeta();
-  await logAuthEvent({
-    kind: "LOGIN_MICROSOFT",
-    identifier: "microsoft_sso",
-    userId: null,
-    ok: null,
-    errorCode: null,
-    note: "sso_redirect_initiated",
-    tenantId: null,
-    sessionId: null,
-    loginMethodDetail: null,
-    failureCountAtTime: null,
-    meta,
-  });
-
   await signIn("microsoft-entra-id", { redirectTo: "/" });
 }
 

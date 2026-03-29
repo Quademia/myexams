@@ -25,6 +25,7 @@ import Google from "next-auth/providers/google";
 import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { pbkdf2Hex } from "@/lib/auth";
+import { logAuthEvent } from "@/lib/auth-events";
 
 // Build and export the NextAuth handler + helpers.
 // We wrap everything in a function so we can await getCloudflareContext()
@@ -205,12 +206,14 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         ) {
           const db = env.DB;
           const now = new Date().toISOString();
+          const kind = account.provider === "google" ? "LOGIN_GOOGLE" : "LOGIN_MICROSOFT";
+          const nullMeta = { ipHash: null, uaHash: null, country: null, uaParsed: null };
 
           // Check if a qa_users row already exists with this email.
           const existing = await db
             .prepare("SELECT id FROM qa_users WHERE email = ?")
             .bind(user.email)
-            .first();
+            .first<{ id: string }>();
 
           if (!existing) {
             // First-time SSO user — create a qa_users row.
@@ -226,6 +229,44 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
               )
               .bind(id, user.name ?? "", user.email, now, now, user.id)
               .run();
+
+            // Log first-time SSO login (fire-and-forget).
+            try {
+              await logAuthEvent({
+                kind,
+                identifier: user.email!,
+                userId: id,
+                ok: true,
+                errorCode: null,
+                note: null,
+                tenantId: null,
+                sessionId: null,
+                loginMethodDetail: "first_time_sso",
+                failureCountAtTime: null,
+                meta: nullMeta,
+              });
+            } catch {
+              // Fire-and-forget — logging must never block SSO login.
+            }
+          } else {
+            // Returning SSO user — log the login (fire-and-forget).
+            try {
+              await logAuthEvent({
+                kind,
+                identifier: user.email!,
+                userId: existing.id,
+                ok: true,
+                errorCode: null,
+                note: null,
+                tenantId: null,
+                sessionId: null,
+                loginMethodDetail: "returning",
+                failureCountAtTime: null,
+                meta: nullMeta,
+              });
+            } catch {
+              // Fire-and-forget — logging must never block SSO login.
+            }
           }
         }
 

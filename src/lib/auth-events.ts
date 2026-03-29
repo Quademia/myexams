@@ -114,7 +114,7 @@ interface LogAuthEventParams {
   sessionId: string | null;
   loginMethodDetail: string | null;
   failureCountAtTime: number | null;
-  meta: { ipHash: string; uaHash: string; country: string; uaParsed: string };
+  meta: { ipHash: string | null; uaHash: string | null; country: string | null; uaParsed: string | null };
 }
 
 export async function logAuthEvent(params: LogAuthEventParams): Promise<void> {
