@@ -26,7 +26,7 @@ import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { pbkdf2Hex } from "@/lib/auth";
 import { logAuthEvent, getRequestMeta } from "@/lib/auth-events";
-import { createSession, countActiveSessions, expireSession, updateLastSeen } from "@/lib/sessions";
+import { createSession, countActiveSessions, expireSession, updateLastSeen, isSessionExpired } from "@/lib/sessions";
 
 // Build and export the NextAuth handler + helpers.
 // We wrap everything in a function so we can await getCloudflareContext()
@@ -236,10 +236,28 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           token.active_tenant_id = updateData.user.active_tenant_id;
         }
 
-        // On normal JWT refreshes (every request), update last_seen_at in D1.
-        // Throttled to once per 5 minutes to avoid a DB write on every request.
-        // We store the last update time in the JWT itself so we can compare.
+        // On normal JWT refreshes (every request), do two things:
+        //
+        // 1. EVERY REQUEST: check if the D1 session was force-expired (e.g. by
+        //    password reset). This must run on every request so revoked sessions
+        //    are caught immediately — not after a 5-minute delay.
+        //    It's a single lightweight SELECT by primary key, so the cost is tiny.
+        //
+        // 2. THROTTLED (5 min): update last_seen_at in D1 for activity tracking.
         if (!trigger && token.session_token) {
+          // --- Session revocation check (every request) ---
+          try {
+            const expired = await isSessionExpired(env.DB, token.session_token as string);
+            if (expired) {
+              // Return a gutted token — NextAuth will treat this as logged out.
+              // getAuth() sees no user.id → returns empty → requireAuth() redirects.
+              return { ...token, sub: undefined, session_token: null };
+            }
+          } catch {
+            // On error, don't block — assume session is still valid.
+          }
+
+          // --- Activity tracking (throttled to once per 5 minutes) ---
           const now = Date.now();
           const lastUpdate = (token.last_seen_updated_at as number) || 0;
           const FIVE_MINUTES_MS = 5 * 60 * 1000;

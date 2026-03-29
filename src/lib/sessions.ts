@@ -73,6 +73,28 @@ export async function countActiveSessions(db: D1Database, qaUserId: string): Pro
   }
 }
 
+// ---------- isSessionExpired ----------
+// Checks if a session has been force-expired (e.g. by password reset).
+// Used in the jwt callback to detect revoked sessions and force logout.
+// Returns false on error — don't lock people out because of a table issue.
+
+export async function isSessionExpired(db: D1Database, sessionToken: string): Promise<boolean> {
+  try {
+    const row = await db.prepare(
+      `SELECT expired_at FROM sessions WHERE sessionToken = ?`
+    ).bind(sessionToken).first<{ expired_at: string | null }>();
+
+    // If no row found, session doesn't exist — treat as expired.
+    if (!row) return true;
+
+    // If expired_at is set, the session was force-expired.
+    return row.expired_at !== null;
+  } catch {
+    // On error, don't block — assume session is still valid.
+    return false;
+  }
+}
+
 // ---------- updateLastSeen ----------
 // Updates the last_seen_at timestamp on an active session row.
 // Called from the jwt callback on normal refreshes, throttled to once per
