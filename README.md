@@ -103,9 +103,23 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - NextAuth manages identity via JWT cookies — no database session lookup on every request
 - `src/auth.ts` — NextAuth config with Credentials, Google, and Microsoft Entra ID providers
 - `src/lib/auth.ts` — platform auth helpers (`getAuth`, `requireAuth`, `pickActiveMembership`, `setActiveTenant`) — same function names and return types as before, now backed by NextAuth
+- `qa_users` is the platform user table for app access decisions (active users, roles, memberships)
 - Credentials provider checks passwords against `qa_users` using PBKDF2 + APP_SECRET pepper (single hash in `authorize()` — never duplicated)
-- Google/Microsoft SSO auto-creates a `qa_users` row on first login via the `signIn` callback
+- Google/Microsoft SSO are **login methods for existing ACTIVE `qa_users` accounts only** — unregistered emails are rejected and redirected back to `/login?error=NoAccount`
 - `active_tenant_id` (current school) is stored as a custom field in the JWT and updated via `unstable_update`
+- Root route `/` is read-only routing logic. If a logged-in user has exactly one membership but no `active_tenant_id`, `/` redirects to `/switch-school?tenant_id=...`; the `/switch-school` route handler performs `setActiveTenant()` safely, then redirects back to `/`
+
+### Join flow (`/join`)
+- Supports three paths:
+  - existing user **Login & join**
+  - new user **Create account & join**
+  - already logged-in user **Join**
+- **Create account path is new-email only**:
+  - if email already exists as ACTIVE in `qa_users`, account creation stops immediately
+  - user is redirected with: `Account already exists. Please log in to join.`
+  - no join side effects occur before ownership is proven (no membership/enrolment/teacher assignment/pending request writes)
+- **Login & join path verifies password first**, then applies join side effects
+- Existing accounts are never silently reused from the create-account path
 
 ### Session tracking & security
 - **D1 session rows** — every successful login creates a row in `sessions` with `qa_user_id`, `created_at`, `last_seen_at`, `absolute_expires_at`, IP hash, and parsed User-Agent. `last_seen_at` is set once at login (not continuously updated)
@@ -201,8 +215,8 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 | `/profile` | View profile, change password | ✅ Verified |
 | `/no-access` | Shown when user has no school memberships | ✅ Verified |
 | `/choose-school` | Pick active school (multi-school users) | ✅ Verified |
-| `/switch-school` | Sets active tenant in JWT, redirects to `/` | ✅ Verified |
-| `/join` | Public join code entry — ⚠️ needs updating for NextAuth (Prompt 4) | ⚠️ Needs fix |
+| `/switch-school` | Route handler that sets active tenant in JWT via `setActiveTenant()`, then redirects to `/` | ✅ Verified |
+| `/join` | Join code flow: login+join, create-account+join (new emails only), and logged-in join; existing emails on create-account are redirected to login path | ✅ Verified |
 | `/health` | Diagnostic route — DB connectivity, response time, timestamp | ✅ Verified |
 
 ---
@@ -308,7 +322,7 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - Email verification on signup
 
 ### Immediate — Prompt 4
-- Fix `/join` page — still has old custom session code (`qa_sess` cookie + old `sessions` INSERT). Needs updating to use NextAuth `signIn` after account creation
+- ~~Fix `/join` page — old custom session behavior and unsafe account reuse on create-account path~~ ✅ Done 2026-03-29 (`signIn`-based flow with existing-email guard)
 
 ### Deferred Phase 2
 - Confirm dialogs on destructive actions — needs client-side `ConfirmButton` component

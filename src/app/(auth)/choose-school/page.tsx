@@ -26,8 +26,9 @@ export default async function ChooseSchoolPage() {
   if (auth.user!.is_system_admin === 1) redirect("/sys");
   if (!auth.memberships.length) redirect("/no-access");
   if (auth.memberships.length === 1) {
-    await setActiveTenant(auth.memberships[0].tenant_id);
-    redirect("/");
+    // This page is a Server Component, so delegate session mutation to the
+    // Route Handler that calls setActiveTenant().
+    redirect(`/switch-school?tenant_id=${encodeURIComponent(auth.memberships[0].tenant_id)}`);
   }
 
   const active = pickActiveMembership(auth);
