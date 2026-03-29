@@ -180,6 +180,10 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
 
         // On sign-in: check concurrent session limit and create session row.
         if (trigger === "signIn" && user?.id) {
+          console.log("JWT signIn trigger - user.id:", user?.id);
+          console.log("JWT signIn trigger - token.sub:", token.sub);
+          console.log("JWT signIn trigger - user object:", JSON.stringify(user));
+
           const qaUserId = user.id;
 
           // Check how many active sessions this user already has.
