@@ -1,13 +1,15 @@
 // src/app/(auth)/logout/route.ts
-// Logout route — clears the NextAuth session and redirects to /login.
+// Logout route — expires the D1 session row, then clears the NextAuth JWT
+// cookie and redirects to /login.
 //
 // HOW IT WORKS:
-// We call NextAuth's signOut() with redirectTo: "/login".
-// signOut() deletes the JWT cookie and then sends a redirect response.
-// This replaces the old code that manually deleted a row from the sessions
-// table and cleared the qa_sess cookie.
+// 1. Read the current session to get the session_token stored in the JWT.
+// 2. Expire the D1 session row (fire-and-forget) so it no longer counts
+//    toward the concurrent session limit.
+// 3. Call NextAuth's signOut() to delete the JWT cookie and redirect.
 
-import { signOut } from "@/auth";
+import { auth, signOut } from "@/auth";
+import { expireSession } from "@/lib/sessions";
 
 // Force this route to be dynamic — never pre-render at build time.
 // Without this, Next.js tries to collect page data during build,
@@ -15,5 +17,12 @@ import { signOut } from "@/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  // Expire the session row in D1 before signing out.
+  const session = await auth();
+  const sessionToken = session?.user?.session_token;
+  if (sessionToken) {
+    await expireSession(sessionToken, "logout");
+  }
+
   await signOut({ redirectTo: "/login" });
 }

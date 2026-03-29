@@ -5,6 +5,7 @@ declare module "next-auth" {
     user: {
       id: string
       active_tenant_id: string | null
+      session_token: string | null
     } & DefaultSession["user"]
   }
 }
@@ -12,6 +13,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT extends DefaultJWT {
     active_tenant_id: string | null
+    session_token: string | null
     id: string
   }
 }

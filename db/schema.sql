@@ -91,11 +91,24 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 -- NextAuth session storage — not actively used with JWT strategy
 -- but required by the NextAuth D1 adapter.
+-- The columns below id/sessionToken/userId/expires are QAcademy additions —
+-- NOT part of the NextAuth schema. NextAuth does not write to them with JWT
+-- strategy. We own these columns entirely for our own session management
+-- (concurrent session limits, absolute expiry, idle timeout tracking).
 CREATE TABLE IF NOT EXISTS sessions (
-  id           TEXT NOT NULL PRIMARY KEY,
-  sessionToken TEXT NOT NULL UNIQUE,
-  userId       TEXT NOT NULL,
-  expires      INTEGER NOT NULL,
+  id                  TEXT NOT NULL PRIMARY KEY,
+  sessionToken        TEXT NOT NULL UNIQUE,
+  userId              TEXT NOT NULL,
+  expires             INTEGER NOT NULL,
+  -- QAcademy session management columns:
+  qa_user_id          TEXT,            -- qa_users.id (our user table)
+  created_at          TEXT,            -- ISO 8601 when session was created
+  last_seen_at        TEXT,            -- ISO 8601 last activity
+  absolute_expires_at TEXT,            -- ISO 8601 hard expiry (login time + maxAge)
+  expired_at          TEXT,            -- ISO 8601 when session was ended (NULL = active)
+  expiry_reason       TEXT,            -- why it ended: "logout" | "superseded" | "expired"
+  ip_hash             TEXT,            -- SHA-256 of IP at login
+  ua_parsed           TEXT,            -- e.g. "Windows 10/11 / Chrome 123"
   FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -557,6 +570,9 @@ CREATE INDEX IF NOT EXISTS idx_exam_attempts_sitting_id ON exam_attempts(sitting
 CREATE INDEX IF NOT EXISTS idx_exam_answers_attempt_id  ON exam_answers(attempt_id);
 CREATE INDEX IF NOT EXISTS idx_exam_answers_question_id ON exam_answers(question_id);
 
+-- Session management indexes
+CREATE INDEX IF NOT EXISTS idx_sessions_qa_user_id ON sessions(qa_user_id, expired_at);
+
 -- Audit table indexes — needed for rate limit queries
 CREATE INDEX IF NOT EXISTS idx_auth_events_identifier ON auth_events(identifier, ts_utc);
 CREATE INDEX IF NOT EXISTS idx_auth_events_ip_hash    ON auth_events(ip_hash, ts_utc);
@@ -605,6 +621,22 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_log_email ON password_reset_log(em
 -- verification_tokens (with QAcademy audit columns).
 -- auth_id column added to qa_users to link to NextAuth users.id.
 -- password_hash, password_salt, password_iter made nullable (SSO users have no password).
+
+-- Session management — 2026-03-29:
+-- Added QAcademy session tracking columns to sessions table:
+-- qa_user_id, created_at, last_seen_at, absolute_expires_at, expired_at,
+-- expiry_reason, ip_hash, ua_parsed. NextAuth does not write to these with
+-- JWT strategy — we own them entirely for concurrent session limits and
+-- idle timeout tracking.
+-- ALTER TABLE sessions ADD COLUMN qa_user_id TEXT;
+-- ALTER TABLE sessions ADD COLUMN created_at TEXT;
+-- ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;
+-- ALTER TABLE sessions ADD COLUMN absolute_expires_at TEXT;
+-- ALTER TABLE sessions ADD COLUMN expired_at TEXT;
+-- ALTER TABLE sessions ADD COLUMN expiry_reason TEXT;
+-- ALTER TABLE sessions ADD COLUMN ip_hash TEXT;
+-- ALTER TABLE sessions ADD COLUMN ua_parsed TEXT;
+-- CREATE INDEX IF NOT EXISTS idx_sessions_qa_user_id ON sessions(qa_user_id, expired_at);
 
 -- Audit & security tables — 2026-03-28:
 -- Created auth_events table for login attempt logging and rate limiting.

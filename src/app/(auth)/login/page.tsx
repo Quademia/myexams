@@ -224,7 +224,13 @@ export default async function LoginPage({
             This email is not registered on QAcademy. Please contact your administrator.
           </div>
         )}
-        {error && error !== "CredentialsSignin" && error !== "TooManyAttempts" && error !== "NoAccount" && (
+        {error === "MaxSessionsReached" && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-4">
+            You already have 2 active sessions. If you recently used another device,
+            please wait a few minutes and try again, or log out from your other devices first.
+          </div>
+        )}
+        {error && error !== "CredentialsSignin" && error !== "TooManyAttempts" && error !== "NoAccount" && error !== "MaxSessionsReached" && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
             Something went wrong. Please try again.
           </div>

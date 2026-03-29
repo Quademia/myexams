@@ -26,6 +26,7 @@ import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { pbkdf2Hex } from "@/lib/auth";
 import { logAuthEvent } from "@/lib/auth-events";
+import { createSession, countActiveSessions } from "@/lib/sessions";
 
 // Build and export the NextAuth handler + helpers.
 // We wrap everything in a function so we can await getCloudflareContext()
@@ -128,6 +129,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
     // connections open between requests.
     session: {
       strategy: "jwt",
+      maxAge: 30 * 60, // 30 minutes for testing — change to 4 * 60 * 60 for production
     },
 
     // ── Secret ──────────────────────────────────────────────────────────
@@ -150,12 +152,13 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
     // ── Callbacks ───────────────────────────────────────────────────────
     callbacks: {
       // The jwt callback runs every time a JWT is created or updated.
-      // We use it for two things:
+      // We use it for three things:
       // 1. Store the user's ID (from qa_users) in the token on first sign-in.
       // 2. Store and update active_tenant_id — the school the user is viewing.
+      // 3. On sign-in: check concurrent session limit and create a session row.
       //
       // The "trigger" parameter tells us WHY the callback is running:
-      // - "signIn": user just logged in → set initial values
+      // - "signIn": user just logged in → set initial values + session tracking
       // - "update": unstable_update() was called → merge in new data
       // - "signUp": new account created (not used for credentials)
       // - undefined: normal JWT refresh on each request
@@ -168,6 +171,38 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         // Initialize active_tenant_id if not already set.
         if (token.active_tenant_id === undefined) {
           token.active_tenant_id = null;
+        }
+
+        // Initialize session_token if not already set.
+        if (token.session_token === undefined) {
+          token.session_token = null;
+        }
+
+        // On sign-in: check concurrent session limit and create session row.
+        if (trigger === "signIn" && user?.id) {
+          const qaUserId = user.id;
+
+          // Check how many active sessions this user already has.
+          const activeCount = await countActiveSessions(qaUserId);
+
+          if (activeCount >= 2) {
+            // Too many sessions — throw so NextAuth redirects to error page.
+            throw new Error("MaxSessionsReached");
+          }
+
+          // Under the limit — create a session row in D1.
+          const sessionToken = crypto.randomUUID();
+          const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 min for testing — match maxAge above
+          const absoluteExpiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
+
+          await createSession({
+            sessionToken,
+            qaUserId,
+            absoluteExpiresAt,
+            meta: { ipHash: null, uaParsed: null }, // headers not available in jwt callback
+          });
+
+          token.session_token = sessionToken;
         }
 
         // When unstable_update() is called (e.g. from setActiveTenant),
@@ -191,6 +226,8 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         // Attach active_tenant_id to the session object.
         // Our next-auth.d.ts type declarations add this field to the Session type.
         session.user.active_tenant_id = (token.active_tenant_id as string | null) ?? null;
+        // Attach session_token so the logout route can expire the D1 row.
+        session.user.session_token = (token.session_token as string | null) ?? null;
         return session;
       },
 
