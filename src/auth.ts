@@ -280,9 +280,21 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
       // - user.id: so getAuth() can look up qa_users
       // - active_tenant_id: so pickActiveMembership() can find the active school
       async session({ session, token }) {
-        if (token.sub && session.user) {
-          session.user.id = token.sub;
+        // If the jwt callback gutted the token (session revoked via password
+        // reset or admin action), strip the user data so getAuth() sees no
+        // email and returns empty → requireAuth() redirects to /login.
+        // Without this, NextAuth keeps the original email/name in the session
+        // even after sub is removed, so the user stays "logged in".
+        if (!token.sub) {
+          session.user.id = "";
+          session.user.email = "";
+          session.user.name = "";
+          session.user.active_tenant_id = null;
+          session.user.session_token = null;
+          return session;
         }
+
+        session.user.id = token.sub;
         // Attach active_tenant_id to the session object.
         // Our next-auth.d.ts type declarations add this field to the Session type.
         session.user.active_tenant_id = (token.active_tenant_id as string | null) ?? null;
