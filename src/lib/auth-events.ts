@@ -188,7 +188,7 @@ interface RateLimitResult {
 export async function checkLoginRateLimit(
   identifier: string,
   userId: string | null,
-  ipHash: string
+  ipHash: string | null
 ): Promise<RateLimitResult> {
   try {
     const { first } = getDb();
@@ -204,13 +204,17 @@ export async function checkLoginRateLimit(
     );
     const shortIdentifier = shortId?.cnt ?? 0;
 
-    // Count by IP
-    const shortIpRow = await first<{ cnt: number }>(
-      `SELECT COUNT(*) AS cnt FROM auth_events
-       WHERE ok = 0 AND ip_hash = ? AND ts_utc > ?`,
-      [ipHash, tenMinAgo]
-    );
-    const shortIp = shortIpRow?.cnt ?? 0;
+    // Count by IP — skip if ipHash is null (SQLite's `= NULL` returns 0 rows,
+    // so this dimension would silently do nothing without this guard)
+    let shortIp = 0;
+    if (ipHash) {
+      const shortIpRow = await first<{ cnt: number }>(
+        `SELECT COUNT(*) AS cnt FROM auth_events
+         WHERE ok = 0 AND ip_hash = ? AND ts_utc > ?`,
+        [ipHash, tenMinAgo]
+      );
+      shortIp = shortIpRow?.cnt ?? 0;
+    }
 
     // Count by user_id (only if we know the user)
     let shortUser = 0;
@@ -241,12 +245,15 @@ export async function checkLoginRateLimit(
     );
     const longIdentifier = longId?.cnt ?? 0;
 
-    const longIpRow = await first<{ cnt: number }>(
-      `SELECT COUNT(*) AS cnt FROM auth_events
-       WHERE ok = 0 AND ip_hash = ? AND ts_utc > ?`,
-      [ipHash, twentyFourHAgo]
-    );
-    const longIp = longIpRow?.cnt ?? 0;
+    let longIp = 0;
+    if (ipHash) {
+      const longIpRow = await first<{ cnt: number }>(
+        `SELECT COUNT(*) AS cnt FROM auth_events
+         WHERE ok = 0 AND ip_hash = ? AND ts_utc > ?`,
+        [ipHash, twentyFourHAgo]
+      );
+      longIp = longIpRow?.cnt ?? 0;
+    }
 
     let longUser = 0;
     if (userId) {

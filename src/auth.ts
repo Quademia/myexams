@@ -26,7 +26,7 @@ import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { pbkdf2Hex } from "@/lib/auth";
 import { logAuthEvent, getRequestMeta } from "@/lib/auth-events";
-import { createSession, countActiveSessions, expireSession } from "@/lib/sessions";
+import { createSession, countActiveSessions, expireSession, updateLastSeen } from "@/lib/sessions";
 
 // Build and export the NextAuth handler + helpers.
 // We wrap everything in a function so we can await getCloudflareContext()
@@ -54,6 +54,17 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
   };
 
   const APP_SECRET = env.APP_SECRET || "";
+
+  // Single source of truth for session lifetime — used by both NextAuth's
+  // JWT maxAge and our D1 session row absolute_expires_at. Change this one
+  // constant and both stay in sync. (30 min for testing — production: 4 * 60 * 60)
+  const SESSION_MAX_AGE_SECS = 30 * 60;
+
+  // Bridge between signIn and jwt callbacks — signIn has access to request
+  // headers (IP, User-Agent) but doesn't create the session row. jwt creates
+  // the session row but can't call headers(). This closure variable lets signIn
+  // stash the metadata so jwt can pick it up on the same request cycle.
+  let pendingSessionMeta: { ipHash: string | null; uaParsed: string | null } | null = null;
 
   return {
     // ── Providers ────────────────────────────────────────────────────────
@@ -129,7 +140,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
     // connections open between requests.
     session: {
       strategy: "jwt",
-      maxAge: 30 * 60, // 30 minutes for testing — change to 4 * 60 * 60 for production
+      maxAge: SESSION_MAX_AGE_SECS,
     },
 
     // ── Secret ──────────────────────────────────────────────────────────
@@ -197,14 +208,19 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
             const qaUserId = qaUserRow?.id ?? user.id;
 
             const sessionToken = crypto.randomUUID();
-            const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 min for testing — match maxAge above
+            const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECS * 1000;
             const absoluteExpiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
+
+            // Use the metadata stashed by the signIn callback (which has access
+            // to request headers). Falls back to nulls if signIn didn't run first.
+            const meta = pendingSessionMeta || { ipHash: null, uaParsed: null };
+            pendingSessionMeta = null; // consume it — one session per sign-in
 
             await createSession(env.DB, {
               sessionToken,
               qaUserId,
               absoluteExpiresAt,
-              meta: { ipHash: null, uaParsed: null }, // headers not available in jwt callback
+              meta,
             });
 
             token.session_token = sessionToken;
@@ -218,6 +234,24 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         // We merge active_tenant_id from it into the token.
         if (trigger === "update" && updateData?.user?.active_tenant_id !== undefined) {
           token.active_tenant_id = updateData.user.active_tenant_id;
+        }
+
+        // On normal JWT refreshes (every request), update last_seen_at in D1.
+        // Throttled to once per 5 minutes to avoid a DB write on every request.
+        // We store the last update time in the JWT itself so we can compare.
+        if (!trigger && token.session_token) {
+          const now = Date.now();
+          const lastUpdate = (token.last_seen_updated_at as number) || 0;
+          const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
+          if (now - lastUpdate > FIVE_MINUTES_MS) {
+            try {
+              await updateLastSeen(env.DB, token.session_token as string);
+              token.last_seen_updated_at = now;
+            } catch {
+              // Fire-and-forget — never break auth for activity tracking.
+            }
+          }
         }
 
         return token;
@@ -406,6 +440,14 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
             // Fire-and-forget — logging must never block login.
           }
         }
+
+        // Stash request metadata so the jwt callback (which runs next) can
+        // include it when creating the D1 session row. The jwt callback can't
+        // call headers() itself on Cloudflare Workers.
+        pendingSessionMeta = {
+          ipHash: requestMeta.ipHash,
+          uaParsed: requestMeta.uaParsed,
+        };
 
         // Returning true means "allow the sign-in to proceed".
         return true;

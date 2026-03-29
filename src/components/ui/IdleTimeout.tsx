@@ -14,6 +14,12 @@
 // 5. If the user clicks "Stay logged in" — resets everything.
 // 6. If the countdown reaches 0 or user clicks "Log out now" — navigates to
 //    /logout to clear the session.
+//
+// CROSS-TAB SYNC:
+// Uses BroadcastChannel to sync activity across browser tabs. When any tab
+// detects user activity, it broadcasts a reset message so other tabs don't
+// show the warning while the user is active elsewhere. When any tab triggers
+// logout, all tabs navigate to /logout together.
 
 "use client";
 
@@ -35,6 +41,9 @@ const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
   "scroll",
 ];
 
+// --- BroadcastChannel name ---
+const CHANNEL_NAME = "qa-idle-timeout";
+
 export function IdleTimeout() {
   const [showWarning, setShowWarning] = useState(false);
   const [countdown, setCountdown] = useState(WARNING_SECONDS);
@@ -46,9 +55,16 @@ export function IdleTimeout() {
   // without showWarning being in the useEffect dependency array (which caused
   // the modal to flicker — the effect re-ran and called resetIdleTimer).
   const showWarningRef = useRef(false);
+  const channelRef = useRef<BroadcastChannel | null>(null);
 
   // Navigate to /logout — ends the session.
   const doLogout = useCallback((reason?: string) => {
+    // Broadcast logout to all other tabs before navigating.
+    try {
+      channelRef.current?.postMessage({ type: "logout" });
+    } catch {
+      // Channel may be closed — that's fine.
+    }
     window.location.href = `/logout?reason=${reason || "logout"}`;
   }, []);
 
@@ -93,8 +109,14 @@ export function IdleTimeout() {
   }, [clearTimers, doLogout]);
 
   // "Stay logged in" button — resets the idle timer and closes the modal.
+  // Also broadcasts activity so other tabs reset too.
   const handleStayLoggedIn = useCallback(() => {
     resetIdleTimer();
+    try {
+      channelRef.current?.postMessage({ type: "activity" });
+    } catch {
+      // Channel may be closed — that's fine.
+    }
   }, [resetIdleTimer]);
 
   // Check for auth state on mount via data-authed body attribute.
@@ -104,12 +126,37 @@ export function IdleTimeout() {
     setIsLoggedIn(true);
   }, []);
 
-  // Set up activity listeners and idle timer when logged in.
+  // Set up activity listeners, idle timer, and cross-tab sync when logged in.
   useEffect(() => {
     if (!isLoggedIn) return;
 
     // Start the idle timer.
     resetIdleTimer();
+
+    // --- BroadcastChannel for cross-tab sync ---
+    // When any tab detects activity, it broadcasts to all other tabs so they
+    // reset their idle timers too. This prevents Tab B from logging out while
+    // the user is actively working in Tab A.
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel(CHANNEL_NAME);
+      channelRef.current = channel;
+
+      channel.onmessage = (event) => {
+        const { type } = event.data || {};
+        if (type === "activity") {
+          // Another tab detected activity — reset our timer.
+          resetIdleTimer();
+        } else if (type === "logout") {
+          // Another tab triggered logout — navigate to /logout.
+          clearTimers();
+          window.location.href = "/logout?reason=idle_timeout";
+        }
+      };
+    } catch {
+      // BroadcastChannel not supported (e.g. very old browsers) — fall back
+      // to per-tab behavior. Not ideal, but the app still works.
+    }
 
     // Listen for activity events.
     const handleActivity = () => {
@@ -118,6 +165,13 @@ export function IdleTimeout() {
       // Read from the ref (not state) to avoid showWarning in the dep array.
       if (!showWarningRef.current) {
         resetIdleTimer();
+
+        // Broadcast activity to other tabs so they reset too.
+        try {
+          channelRef.current?.postMessage({ type: "activity" });
+        } catch {
+          // Channel may be closed — that's fine.
+        }
       }
     };
 
@@ -129,6 +183,13 @@ export function IdleTimeout() {
       clearTimers();
       for (const event of ACTIVITY_EVENTS) {
         window.removeEventListener(event, handleActivity);
+      }
+      // Close the BroadcastChannel on cleanup.
+      try {
+        channel?.close();
+        channelRef.current = null;
+      } catch {
+        // Already closed — that's fine.
       }
     };
   }, [isLoggedIn, resetIdleTimer, clearTimers]);

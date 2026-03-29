@@ -73,6 +73,43 @@ export async function countActiveSessions(db: D1Database, qaUserId: string): Pro
   }
 }
 
+// ---------- updateLastSeen ----------
+// Updates the last_seen_at timestamp on an active session row.
+// Called from the jwt callback on normal refreshes, throttled to once per
+// 5 minutes to avoid a DB write on every single request.
+// Fire-and-forget wrapped in try/catch — never throws.
+
+export async function updateLastSeen(db: D1Database, sessionToken: string): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    await db.prepare(
+      `UPDATE sessions SET last_seen_at = ? WHERE sessionToken = ? AND expired_at IS NULL`
+    ).bind(now, sessionToken).run();
+  } catch {
+    // Fire-and-forget — activity tracking must never break auth.
+  }
+}
+
+// ---------- expireAllUserSessions ----------
+// Expires every active session for a given user. Used after password reset
+// to force-logout all existing sessions — if a session was compromised,
+// the attacker's JWT may still be valid but the D1 row will be marked
+// expired, so the concurrent session counter treats it as dead.
+// Fire-and-forget wrapped in try/catch — never throws.
+
+export async function expireAllUserSessions(db: D1Database, qaUserId: string, reason: string): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    await db.prepare(
+      `UPDATE sessions
+       SET last_seen_at = ?, expired_at = ?, expiry_reason = ?
+       WHERE qa_user_id = ? AND expired_at IS NULL`
+    ).bind(now, now, reason, qaUserId).run();
+  } catch {
+    // Fire-and-forget — session cleanup must never break the reset flow.
+  }
+}
+
 // ---------- expireSession ----------
 // Marks a session as expired. Used on logout and when superseding old sessions.
 // Fire-and-forget wrapped in try/catch — never throws.

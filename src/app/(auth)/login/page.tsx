@@ -21,8 +21,6 @@
 
 import { signIn } from "@/auth";
 import { getDb } from "@/lib/db";
-import { pbkdf2Hex } from "@/lib/auth";
-import { getEnv } from "@/lib/env";
 import { logAuthEvent, checkLoginRateLimit, getRequestMeta } from "@/lib/auth-events";
 import { Card } from "@/components/ui/Card";
 
@@ -38,16 +36,14 @@ async function loginAction(formData: FormData) {
   // 1. Derive request metadata from Cloudflare headers.
   const meta = await getRequestMeta();
 
-  // 2. Look up the user in qa_users — we need id for rate limiting and the
-  //    password fields so we can verify the password before calling signIn().
+  // 2. Look up the user in qa_users — we need the id for rate limiting.
+  //    We do NOT verify the password here. That happens once in authorize()
+  //    in src/auth.ts when signIn("credentials") is called below. Doing it
+  //    here too would hash the password with PBKDF2 twice per login — expensive
+  //    and unnecessary.
   const { first } = getDb();
-  const user = await first<{
-    id: string;
-    password_hash: string | null;
-    password_salt: string | null;
-    password_iter: number | null;
-  }>(
-    "SELECT id, password_hash, password_salt, password_iter FROM qa_users WHERE email = ? AND status = 'ACTIVE'",
+  const user = await first<{ id: string }>(
+    "SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'",
     [email]
   );
   const userId = user?.id ?? null;
@@ -81,31 +77,34 @@ async function loginAction(formData: FormData) {
     redirect("/login?error=TooManyAttempts");
   }
 
-  // 4. Verify the password ourselves before calling signIn().
-  //    This avoids having to interpret signIn()'s thrown errors (which differ
-  //    across runtimes). We log success/failure here, then either redirect on
-  //    failure or proceed to signIn() for the session cookie on success.
-  const { APP_SECRET } = getEnv();
-  let passwordValid = false;
+  // 4. Call signIn("credentials") — NextAuth runs our authorize() function in
+  //    src/auth.ts which does the single PBKDF2 hash+compare. If the password
+  //    is wrong, authorize() returns null and signIn() redirects to ?error=...
+  //    Success/failure logging for credentials is handled in the signIn callback
+  //    in src/auth.ts (after concurrent session check).
+  try {
+    await signIn("credentials", {
+      email,
+      password,
+      redirectTo: "/",
+    });
+  } catch (err: unknown) {
+    // signIn() throws a redirect internally (both success and failure).
+    // Let redirect errors through — they're how NextAuth navigates.
+    const e = err as { digest?: string };
+    if (typeof e.digest === "string" && e.digest.includes("NEXT_REDIRECT")) {
+      throw err;
+    }
 
-  if (user && user.password_hash && user.password_salt && user.password_iter) {
-    const derived = await pbkdf2Hex(
-      password + "|" + APP_SECRET,
-      user.password_salt,
-      user.password_iter
-    );
-    passwordValid = derived === user.password_hash;
-  }
-
-  if (!passwordValid) {
-    // User doesn't exist, has no password, or password didn't match.
+    // signIn returns null from authorize() when credentials are wrong.
+    // NextAuth converts that to a CredentialsSignin error, which we log.
     await logAuthEvent({
       kind: "LOGIN_EMAIL",
       identifier: email,
       userId,
       ok: false,
       errorCode: "invalid_login",
-      note: "bad_password",
+      note: "authorize_returned_null",
       tenantId: null,
       sessionId: null,
       loginMethodDetail: null,
@@ -114,43 +113,6 @@ async function loginAction(formData: FormData) {
     });
     const { redirect } = await import("next/navigation");
     redirect("/login?error=CredentialsSignin");
-  }
-
-  // Password is correct — success logging is handled in the signIn callback
-  // in src/auth.ts after the concurrent session check passes. We do NOT log
-  // here because the signIn callback may still block the login (max sessions).
-
-  // 5. Call signIn() to create the session cookie and redirect to "/".
-  //    Since we've already verified the password, this should always succeed.
-  //    The catch block only handles genuinely unexpected errors.
-  try {
-    await signIn("credentials", {
-      email,
-      password,
-      redirectTo: "/",
-    });
-  } catch (err: unknown) {
-    // signIn() throws a redirect internally — let those through.
-    const e = err as { digest?: string };
-    if (typeof e.digest === "string" && e.digest.includes("NEXT_REDIRECT")) {
-      throw err;
-    }
-
-    // Genuinely unexpected error — log and re-throw.
-    await logAuthEvent({
-      kind: "LOGIN_EMAIL",
-      identifier: email,
-      userId,
-      ok: false,
-      errorCode: "unexpected_error",
-      note: null,
-      tenantId: null,
-      sessionId: null,
-      loginMethodDetail: null,
-      failureCountAtTime: null,
-      meta,
-    });
-    throw err;
   }
 }
 

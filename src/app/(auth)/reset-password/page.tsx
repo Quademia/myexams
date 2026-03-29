@@ -21,6 +21,8 @@ import { headers } from "next/headers";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { sha256Hex, pbkdf2Hex, randomSaltHex } from "@/lib/auth";
+import { expireAllUserSessions } from "@/lib/sessions";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { Card } from "@/components/ui/Card";
 
 // ── Server Action ────────────────────────────────────────────────────
@@ -100,16 +102,36 @@ async function resetPasswordAction(formData: FormData) {
     [hash, salt, 40000, nowISO, email]
   );
 
+  // ── Expire all existing sessions for this user ──
+  // If someone reset their password because a session was compromised, this
+  // ensures the attacker's session is killed. The user will need to log in
+  // again with their new password.
+  try {
+    const qaUser = await first<{ id: string }>(
+      "SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'",
+      [email]
+    );
+    if (qaUser) {
+      const { env } = await getCloudflareContext({ async: true });
+      const db = (env as any).DB as D1Database;
+      await expireAllUserSessions(db, qaUser.id, "password_reset");
+    }
+  } catch {
+    // Fire-and-forget — never break the reset flow for session cleanup.
+  }
+
   // ── Mark token as used ──
-  // Record when and from what IP the token was consumed — for audit trail.
+  // Record when and from what IP hash the token was consumed — for audit trail.
+  // We hash the IP for privacy, consistent with auth_events and forgot-password.
   const hdrs = await headers();
-  const ip = hdrs.get("cf-connecting-ip") || hdrs.get("x-forwarded-for") || "unknown";
+  const rawIp = hdrs.get("cf-connecting-ip") || hdrs.get("x-forwarded-for") || null;
+  const usedIpHash = rawIp ? await sha256Hex(rawIp) : null;
 
   await run(
     `UPDATE verification_tokens
      SET used_at = ?, used_ip_address = ?
      WHERE identifier = ? AND token = ?`,
-    [nowISO, ip, email, tokenHash]
+    [nowISO, usedIpHash, email, tokenHash]
   );
 
   // ── Update password_reset_log ──
@@ -120,7 +142,7 @@ async function resetPasswordAction(formData: FormData) {
       `UPDATE password_reset_log
        SET action_note = action_note || ' | password_changed'
        WHERE reset_token = ? AND status = 'EMAIL_SENT'`,
-      [token]
+      [tokenHash]  // match on the hash, same value stored by forgot-password
     );
   } catch {
     // Fire-and-forget — never break the reset flow for logging.

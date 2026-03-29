@@ -125,9 +125,12 @@ async function forgotPasswordAction(formData: FormData) {
   //    The raw token goes in the email link; only the hash goes in the database.
   const tokenHash = await sha256Hex(rawToken);
 
-  // 6. Get the requester's IP address for audit purposes.
+  // 6. Get the requester's IP address hash for audit purposes.
+  //    We hash the IP for privacy — consistent with auth_events which also
+  //    stores ip_hash, never raw IPs.
   const hdrs = await headers();
-  const ip = hdrs.get("cf-connecting-ip") || hdrs.get("x-forwarded-for") || "unknown";
+  const rawIp = hdrs.get("cf-connecting-ip") || hdrs.get("x-forwarded-for") || null;
+  const ipHash = rawIp ? await sha256Hex(rawIp) : null;
 
   // 7. Insert the token into verification_tokens.
   //    - identifier: the user's email (NextAuth's standard column)
@@ -138,7 +141,7 @@ async function forgotPasswordAction(formData: FormData) {
     `INSERT INTO verification_tokens
        (identifier, token, expires, created_at, ip_address, used_at, used_ip_address, invalidated_at)
      VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)`,
-    [email, tokenHash, nowUnix + 3600, nowISO, ip]
+    [email, tokenHash, nowUnix + 3600, nowISO, ipHash]
   );
 
   // 8. Build the reset link and send the email via Resend.
@@ -179,7 +182,7 @@ async function forgotPasswordAction(formData: FormData) {
     userId: user.id,
     tenantId: null,
     actionNote: "Reset email sent successfully",
-    resetToken: rawToken,
+    resetToken: tokenHash,  // store the hash, never the raw token
     status: "EMAIL_SENT",
     meta,
   });
