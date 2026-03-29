@@ -95,23 +95,6 @@ export async function isSessionExpired(db: D1Database, sessionToken: string): Pr
   }
 }
 
-// ---------- updateLastSeen ----------
-// Updates the last_seen_at timestamp on an active session row.
-// Called from the jwt callback on normal refreshes, throttled to once per
-// 5 minutes to avoid a DB write on every single request.
-// Fire-and-forget wrapped in try/catch — never throws.
-
-export async function updateLastSeen(db: D1Database, sessionToken: string): Promise<void> {
-  try {
-    const now = new Date().toISOString();
-    await db.prepare(
-      `UPDATE sessions SET last_seen_at = ? WHERE sessionToken = ? AND expired_at IS NULL`
-    ).bind(now, sessionToken).run();
-  } catch {
-    // Fire-and-forget — activity tracking must never break auth.
-  }
-}
-
 // ---------- expireAllUserSessions ----------
 // Expires every active session for a given user. Used after password reset
 // to force-logout all existing sessions — if a session was compromised,
