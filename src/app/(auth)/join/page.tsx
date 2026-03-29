@@ -179,21 +179,22 @@ async function joinCreateAccountAction(formData: FormData) {
   const v = isCodeValid(jc);
   if (!v.ok || !jc) redirect(`/join?code=${encodeURIComponent(codePlain)}&error=${encodeURIComponent(v.why)}`);
 
-  // 2. Create account if email doesn't already exist.
+  // 2. Create account ONLY for genuinely new emails.
   const now = new Date().toISOString();
-  let u = await first<{ id: string }>("SELECT id FROM qa_users WHERE email=? AND status='ACTIVE'", [email]);
-  let userId = u?.id;
-
-  if (!userId) {
-    const saltHex = randomSaltHex();
-    const iter = 40000;
-    const hashHex = await pbkdf2Hex(password + "|" + APP_SECRET, saltHex, iter);
-    userId = crypto.randomUUID();
-    await run(
-      "INSERT INTO qa_users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,0,'ACTIVE',?,?)",
-      [userId, email, name, saltHex, hashHex, iter, now, now]
-    );
+  const existing = await first<{ id: string }>("SELECT id FROM qa_users WHERE email=? AND status='ACTIVE'", [email]);
+  if (existing) {
+    // Security hardening: do NOT reuse existing accounts from the create-account path.
+    // Existing users must use "Login & join" to prove ownership via password.
+    redirect(`/join?code=${encodeURIComponent(codePlain)}&error=Account+already+exists.+Please+log+in+to+join.`);
   }
+  const saltHex = randomSaltHex();
+  const iter = 40000;
+  const hashHex = await pbkdf2Hex(password + "|" + APP_SECRET, saltHex, iter);
+  const userId = crypto.randomUUID();
+  await run(
+    "INSERT INTO qa_users (id, email, name, password_salt, password_hash, password_iter, is_system_admin, status, created_at, updated_at) VALUES (?,?,?,?,?,?,0,'ACTIVE',?,?)",
+    [userId, email, name, saltHex, hashHex, iter, now, now]
+  );
 
   // 3. Apply join code BEFORE signIn (signIn throws a redirect and never returns).
   if (jc.auto_approve === 1) {
