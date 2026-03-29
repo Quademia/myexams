@@ -76,11 +76,22 @@ function parseUserAgent(ua: string): string {
 
 export async function getRequestMeta() {
   const h = await headers();
-  const rawIp = h.get("cf-connecting-ip") || h.get("x-forwarded-for") || "unknown";
+
+  // cf-connecting-ip is always a single IP. x-forwarded-for can be a
+  // comma-separated list (e.g. "203.0.113.1, 10.0.0.1") — take only
+  // the first token so the same client always produces the same hash.
+  const cfIp = h.get("cf-connecting-ip");
+  let rawIp: string | null = cfIp;
+  if (!rawIp) {
+    const xff = h.get("x-forwarded-for");
+    rawIp = xff ? xff.split(",")[0].trim() : null;
+  }
+
   const rawUa = h.get("user-agent") || "unknown";
   const country = h.get("cf-ipcountry") || "unknown";
 
-  const ipHash = await sha256Hex(rawIp);
+  // If IP is unknown/null, store null rather than hashing the string "unknown".
+  const ipHash = rawIp ? await sha256Hex(rawIp) : null;
   const uaHash = await sha256Hex(rawUa);
   const uaParsed = parseUserAgent(rawUa);
 

@@ -25,7 +25,7 @@ import Google from "next-auth/providers/google";
 import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { pbkdf2Hex } from "@/lib/auth";
-import { logAuthEvent } from "@/lib/auth-events";
+import { logAuthEvent, getRequestMeta } from "@/lib/auth-events";
 import { createSession, countActiveSessions, expireSession } from "@/lib/sessions";
 
 // Build and export the NextAuth handler + helpers.
@@ -243,15 +243,27 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
       // BEFORE the session is created. We use it to auto-create a qa_users
       // row exists in qa_users. Unregistered emails are rejected.
       async signIn({ user, account }) {
-        // Only run for OAuth providers (Google, Microsoft).
-        // Credentials are handled in the authorize function above.
+        // Try to get real request metadata (IP, UA, country) from headers.
+        // Falls back to nulls if headers() is not available in this context.
+        const nullMeta = { ipHash: null, uaHash: null, country: null, uaParsed: null };
+        let requestMeta = nullMeta;
+        try {
+          requestMeta = await getRequestMeta();
+        } catch {
+          // headers() not available in this context — fall back to nullMeta
+        }
+
+        // --- SSO-specific checks (Google, Microsoft) ---
+        // For SSO: check if email is registered. If not, reject immediately.
+        // SSO success logging is deferred until after the session count check.
+        let ssoExistingId: string | null = null;
+
         if (
           account?.provider === "google" ||
           account?.provider === "microsoft-entra-id"
         ) {
           const db = env.DB;
           const kind = account.provider === "google" ? "LOGIN_GOOGLE" : "LOGIN_MICROSOFT";
-          const nullMeta = { ipHash: null, uaHash: null, country: null, uaParsed: null };
 
           // Check if an ACTIVE qa_users row exists with this email.
           const existing = await db
@@ -273,7 +285,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
                 sessionId: null,
                 loginMethodDetail: null,
                 failureCountAtTime: null,
-                meta: nullMeta,
+                meta: requestMeta,
               });
             } catch {
               // Fire-and-forget — logging must never block SSO login.
@@ -281,43 +293,33 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
             return "/login?error=NoAccount";
           }
 
-          // Returning SSO user — log the login (fire-and-forget).
-          try {
-            await logAuthEvent({
-              kind,
-              identifier: user.email!,
-              userId: existing.id,
-              ok: true,
-              errorCode: null,
-              note: null,
-              tenantId: null,
-              sessionId: null,
-              loginMethodDetail: "returning",
-              failureCountAtTime: null,
-              meta: nullMeta,
-            });
-          } catch {
-            // Fire-and-forget — logging must never block SSO login.
-          }
+          // Store the existing id for use in session check and success logging below.
+          ssoExistingId = existing.id;
         }
 
-        // Check concurrent session limit for ALL login types.
+        // --- Concurrent session limit (ALL login types) ---
         // We look up qa_users by email since user.id may be NextAuth's id for SSO.
+        // For SSO, we already have the id from the check above — reuse it.
         try {
-          const qaUserRow = await env.DB
-            .prepare("SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'")
-            .bind(user.email)
-            .first<{ id: string }>();
+          let qaUserId: string | null = ssoExistingId;
 
-          if (qaUserRow) {
-            const activeCount = await countActiveSessions(env.DB, qaUserRow.id);
+          if (!qaUserId) {
+            const qaUserRow = await env.DB
+              .prepare("SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'")
+              .bind(user.email)
+              .first<{ id: string }>();
+            qaUserId = qaUserRow?.id ?? null;
+          }
+
+          if (qaUserId) {
+            const activeCount = await countActiveSessions(env.DB, qaUserId);
             if (activeCount >= 2) {
               // Log the blocked attempt to auth_events (fire-and-forget).
               try {
                 await logAuthEvent({
                   kind: account?.provider === "google" ? "LOGIN_GOOGLE" : account?.provider === "microsoft-entra-id" ? "LOGIN_MICROSOFT" : "LOGIN_EMAIL",
                   identifier: user.email!,
-                  userId: qaUserRow.id,
+                  userId: qaUserId,
                   ok: false,
                   errorCode: "max_sessions_reached",
                   note: "concurrent session limit exceeded",
@@ -325,7 +327,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
                   sessionId: null,
                   loginMethodDetail: null,
                   failureCountAtTime: activeCount,
-                  meta: { ipHash: null, uaHash: null, country: null, uaParsed: null },
+                  meta: requestMeta,
                 });
               } catch {
                 // Fire-and-forget — never block the redirect.
@@ -337,9 +339,9 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
                 const now = new Date().toISOString();
                 await createSession(env.DB, {
                   sessionToken: blockedToken,
-                  qaUserId: qaUserRow.id,
+                  qaUserId,
                   absoluteExpiresAt: now,
-                  meta: { ipHash: null, uaParsed: null },
+                  meta: { ipHash: requestMeta.ipHash, uaParsed: requestMeta.uaParsed },
                 });
                 await expireSession(env.DB, blockedToken, "max_sessions_reached");
               } catch {
@@ -353,9 +355,35 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           // Fire-and-forget — never block login because of a session count failure.
         }
 
-        // Log successful credentials login (SSO success is already logged above).
+        // --- Success logging (only fires after session check passes) ---
+
+        // SSO success — log for Google/Microsoft returning users.
+        if (ssoExistingId && (account?.provider === "google" || account?.provider === "microsoft-entra-id")) {
+          const kind = account.provider === "google" ? "LOGIN_GOOGLE" : "LOGIN_MICROSOFT";
+          try {
+            await logAuthEvent({
+              kind,
+              identifier: user.email!,
+              userId: ssoExistingId,
+              ok: true,
+              errorCode: null,
+              note: null,
+              tenantId: null,
+              sessionId: null,
+              loginMethodDetail: "returning",
+              failureCountAtTime: null,
+              meta: requestMeta,
+            });
+          } catch {
+            // Fire-and-forget — logging must never block SSO login.
+          }
+        }
+
+        // Credentials success — log for email/password returning users.
         if (account?.provider === "credentials") {
           try {
+            // qaUserId was already looked up in the session check above,
+            // but that's inside a try/catch that may have failed. Look up again.
             const credQaUser = await env.DB
               .prepare("SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'")
               .bind(user.email)
@@ -372,7 +400,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
               sessionId: null,
               loginMethodDetail: "returning",
               failureCountAtTime: null,
-              meta: { ipHash: null, uaHash: null, country: null, uaParsed: null },
+              meta: requestMeta,
             });
           } catch {
             // Fire-and-forget — logging must never block login.
