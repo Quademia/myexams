@@ -179,11 +179,11 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         }
 
         // On sign-in: check concurrent session limit and create session row.
-        if (trigger === "signIn" && user?.id) {
-          console.log("JWT signIn trigger - user.id:", user?.id);
-          console.log("JWT signIn trigger - token.sub:", token.sub);
-          console.log("JWT signIn trigger - user object:", JSON.stringify(user));
-
+        // We use user?.id && !token.session_token instead of trigger === "signIn"
+        // because the trigger value is unreliable on Cloudflare Workers with
+        // the credentials provider. This fires the first time the jwt callback
+        // runs with a user present and no session token already stored.
+        if (user?.id && !token.session_token) {
           const qaUserId = user.id;
 
           // Check how many active sessions this user already has.
