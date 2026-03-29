@@ -184,29 +184,34 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         // the credentials provider. This fires the first time the jwt callback
         // runs with a user present and no session token already stored.
         if (user?.id && !token.session_token) {
-          const qaUserId = user.id;
+          try {
+            const qaUserId = user.id;
 
-          // Check how many active sessions this user already has.
-          const activeCount = await countActiveSessions(env.DB, qaUserId);
+            // Check how many active sessions this user already has.
+            const activeCount = await countActiveSessions(env.DB, qaUserId);
 
-          if (activeCount >= 2) {
-            // Too many sessions — throw so NextAuth redirects to error page.
-            throw new Error("MaxSessionsReached");
+            if (activeCount >= 2) {
+              // Too many sessions — throw so NextAuth redirects to error page.
+              throw new Error("MaxSessionsReached");
+            }
+
+            // Under the limit — create a session row in D1.
+            const sessionToken = crypto.randomUUID();
+            const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 min for testing — match maxAge above
+            const absoluteExpiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
+
+            await createSession(env.DB, {
+              sessionToken,
+              qaUserId,
+              absoluteExpiresAt,
+              meta: { ipHash: null, uaParsed: null }, // headers not available in jwt callback
+            });
+
+            token.session_token = sessionToken;
+          } catch (err) {
+            // Re-throw ALL errors including MaxSessionsReached — DEBUG diagnostic
+            throw err;
           }
-
-          // Under the limit — create a session row in D1.
-          const sessionToken = crypto.randomUUID();
-          const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 min for testing — match maxAge above
-          const absoluteExpiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
-
-          await createSession(env.DB, {
-            sessionToken,
-            qaUserId,
-            absoluteExpiresAt,
-            meta: { ipHash: null, uaParsed: null }, // headers not available in jwt callback
-          });
-
-          token.session_token = sessionToken;
         }
 
         // When unstable_update() is called (e.g. from setActiveTenant),
