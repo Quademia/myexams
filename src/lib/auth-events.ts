@@ -26,21 +26,48 @@ function parseUserAgent(ua: string): string {
   let os = "Unknown";
   let browser = "Unknown";
 
-  // Detect OS — order matters (e.g. "Android" contains "Linux")
-  if (/android/i.test(ua)) os = "Android";
-  else if (/iPad|iPhone|iPod/i.test(ua)) os = "iOS";
-  else if (/windows/i.test(ua)) os = "Windows";
-  else if (/macintosh|mac os/i.test(ua)) os = "Mac";
-  else if (/linux/i.test(ua)) os = "Linux";
+  // Detect OS with version — order matters (e.g. "Android" contains "Linux")
+  if (/android/i.test(ua)) {
+    const m = ua.match(/Android\s+([\d.]+)/i);
+    os = m ? `Android ${m[1].split(".")[0]}` : "Android";
+  } else if (/iPad|iPhone|iPod/i.test(ua)) {
+    const m = ua.match(/CPU\s+(?:iPhone\s+)?OS\s+(\d+)/i);
+    os = m ? `iOS ${m[1]}` : "iOS";
+  } else if (/windows/i.test(ua)) {
+    const m = ua.match(/Windows NT\s+([\d.]+)/i);
+    if (m) {
+      const nt = m[1];
+      if (nt === "10.0") os = "Windows 10/11";
+      else if (nt === "6.3") os = "Windows 8.1";
+      else if (nt === "6.1") os = "Windows 7";
+      else os = `Windows NT ${nt}`;
+    } else {
+      os = "Windows";
+    }
+  } else if (/macintosh|mac os/i.test(ua)) {
+    const m = ua.match(/Mac OS X\s+([\d_.]+)/i);
+    os = m ? `macOS ${m[1].replace(/_/g, ".")}` : "macOS";
+  } else if (/linux/i.test(ua)) {
+    os = "Linux";
+  }
 
-  // Detect browser — order matters (e.g. Edge contains "Chrome")
-  if (/edg(e|\/)/i.test(ua)) browser = "Edge";
-  else if (/chrome|crios/i.test(ua)) browser = "Chrome";
-  else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = "Safari";
-  else if (/firefox|fxios/i.test(ua)) browser = "Firefox";
+  // Detect browser with major version — order matters (e.g. Edge contains "Chrome")
+  if (/edg(e|\/)/i.test(ua)) {
+    const m = ua.match(/Edg(?:e|\/)([\d]+)/i);
+    browser = m ? `Edge ${m[1]}` : "Edge";
+  } else if (/chrome|crios/i.test(ua)) {
+    const m = ua.match(/(?:Chrome|CriOS)\/([\d]+)/i);
+    browser = m ? `Chrome ${m[1]}` : "Chrome";
+  } else if (/safari/i.test(ua) && !/chrome/i.test(ua)) {
+    const m = ua.match(/Version\/([\d]+)/i);
+    browser = m ? `Safari ${m[1]}` : "Safari";
+  } else if (/firefox|fxios/i.test(ua)) {
+    const m = ua.match(/(?:Firefox|FxiOS)\/([\d]+)/i);
+    browser = m ? `Firefox ${m[1]}` : "Firefox";
+  }
 
   if (os === "Unknown" && browser === "Unknown") return "Unknown";
-  return `${os} · ${browser}`;
+  return `${os} / ${browser}`;
 }
 
 // ---------- Header helpers ----------
