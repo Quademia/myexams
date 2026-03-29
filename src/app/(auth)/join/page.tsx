@@ -1,13 +1,20 @@
-// src/app/join/page.tsx
+// src/app/(auth)/join/page.tsx
 // Public join page — users enter a join code to join a school or course.
-// Flow:
+//
+// FLOW:
 // 1. Enter code → validate → show preview
-// 2a. If logged in + auto-approve → join immediately
-// 2b. If logged in + needs approval → create join request
+// 2a. If logged in + auto-approve → join immediately (joinLoggedInAction)
+// 2b. If logged in + needs approval → create join request (joinLoggedInAction)
 // 2c. If not logged in → show login + create account forms
+//     - Login: verify password, apply join code, then signIn() for JWT (joinLoginAction)
+//     - Create account: create qa_users row, apply join code, then signIn() (joinCreateAccountAction)
+//
+// KEY CONSTRAINT: signIn("credentials") throws a redirect and never returns.
+// All join code logic (memberships, enrolments, approval requests) MUST execute
+// before calling signIn(). The root page "/" handles setting active_tenant_id.
 
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { signIn } from "@/auth";
 import { getAuth, joinCodeHash as jcHash, pbkdf2Hex, randomSaltHex, roleLabel, fmtISO, isIsoInPast } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
@@ -50,6 +57,10 @@ async function checkCodeAction(formData: FormData) {
   redirect(`/join?code=${encodeURIComponent(code)}`);
 }
 
+// joinLoginAction — existing user (NOT logged in) enters credentials on the
+// join page. We verify the password, apply the join code, then call signIn()
+// to create the NextAuth JWT session. signIn() throws a redirect and never
+// returns, so all join code logic MUST happen before it.
 async function joinLoginAction(formData: FormData) {
   "use server";
   const codePlain = (formData.get("code") as string || "").toUpperCase().replaceAll(" ", "");
@@ -57,12 +68,16 @@ async function joinLoginAction(formData: FormData) {
   const password = formData.get("password") as string || "";
 
   const { APP_SECRET } = getEnv();
-  const { first, all, run } = getDb();
+  const { first, run } = getDb();
 
+  // 1. Validate join code.
   const jc = await loadJoinCode(codePlain, APP_SECRET);
   const v = isCodeValid(jc);
   if (!v.ok || !jc) redirect(`/join?code=${encodeURIComponent(codePlain)}&error=${encodeURIComponent(v.why)}`);
 
+  // 2. Look up user and verify password.
+  //    We verify here (not in authorize()) because we need to apply the join
+  //    code before signIn() — and we shouldn't apply it for a wrong password.
   const u = await first<{
     id: string; password_salt: string; password_hash: string; password_iter: number;
   }>("SELECT id, password_salt, password_hash, password_iter FROM qa_users WHERE email=? AND status='ACTIVE'", [email]);
@@ -71,36 +86,80 @@ async function joinLoginAction(formData: FormData) {
   const check = await pbkdf2Hex(password + "|" + APP_SECRET, u.password_salt, Number(u.password_iter));
   if (check !== u.password_hash) redirect(`/join?code=${encodeURIComponent(codePlain)}&error=Wrong+email+or+password`);
 
-  // Create session.
-  const token = crypto.randomUUID() + "-" + crypto.randomUUID();
-  const tokenHashVal = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))))
-    .map(b => b.toString(16).padStart(2, "0")).join("");
+  // 3. Apply join code BEFORE signIn (signIn throws a redirect and never returns).
   const now = new Date().toISOString();
-  const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  await run("INSERT INTO sessions (token_hash, user_id, active_tenant_id, expires_at, created_at) VALUES (?,?,?,?,?)",
-    [tokenHashVal, u.id, jc.tenant_id, expires, now]);
-
-  const cookieStore = await cookies();
-  cookieStore.set("qa_sess", token, { path: "/", httpOnly: true, secure: true, sameSite: "lax", maxAge: 7 * 24 * 60 * 60 });
 
   if (jc.auto_approve === 1) {
     await run(`UPDATE join_codes SET uses_approved = uses_approved + 1, updated_at=? WHERE id=? AND revoked=0 AND uses_approved < max_uses`, [now, jc.id]);
     await applyJoin(u.id, jc, run, first);
+  } else {
+    // Needs approval — create request.
+    const exists = await first("SELECT id FROM join_requests WHERE join_code_id=? AND user_id=? AND status='PENDING' LIMIT 1", [jc.id, u.id]);
+    if (!exists) {
+      const reqType = jc.scope === "TENANT_ROLE" ? "MEMBERSHIP" : jc.scope;
+      await run(
+        `INSERT INTO join_requests (id, join_code_id, tenant_id, course_id, user_id, type, requested_role, status, created_at) VALUES (?,?,?,?,?,?,?,'PENDING',?)`,
+        [crypto.randomUUID(), jc.id, jc.tenant_id, jc.course_id, u.id, reqType, jc.role, now]
+      );
+    }
+  }
+
+  // 4. Create NextAuth JWT session — this throws a redirect to "/" and never returns.
+  //    The root page "/" handles setting active_tenant_id automatically.
+  try {
+    await signIn("credentials", { email, password, redirectTo: "/" });
+  } catch (err: unknown) {
+    const e = err as { digest?: string };
+    if (typeof e.digest === "string" && e.digest.includes("NEXT_REDIRECT")) {
+      throw err;
+    }
+    // Unexpected error — redirect to join page with error.
+    redirect(`/join?code=${encodeURIComponent(codePlain)}&error=Something+went+wrong`);
+  }
+}
+
+// joinLoggedInAction — user is ALREADY logged in and clicks "Join" on the
+// join preview page. No authentication needed — they already have a JWT.
+// We just apply the join code and redirect.
+async function joinLoggedInAction(formData: FormData) {
+  "use server";
+  const codePlain = (formData.get("code") as string || "").toUpperCase().replaceAll(" ", "");
+
+  const auth = await getAuth();
+  if (!auth.user) redirect("/login");
+
+  const { APP_SECRET } = getEnv();
+  const { first, run } = getDb();
+
+  // Validate join code.
+  const jc = await loadJoinCode(codePlain, APP_SECRET);
+  const v = isCodeValid(jc);
+  if (!v.ok || !jc) redirect(`/join?code=${encodeURIComponent(codePlain)}&error=${encodeURIComponent(v.why)}`);
+
+  const now = new Date().toISOString();
+
+  if (jc.auto_approve === 1) {
+    await run(`UPDATE join_codes SET uses_approved = uses_approved + 1, updated_at=? WHERE id=? AND revoked=0 AND uses_approved < max_uses`, [now, jc.id]);
+    await applyJoin(auth.user.id, jc, run, first);
     redirect("/");
   }
 
   // Needs approval — create request.
-  const exists = await first("SELECT id FROM join_requests WHERE join_code_id=? AND user_id=? AND status='PENDING' LIMIT 1", [jc.id, u.id]);
+  const exists = await first("SELECT id FROM join_requests WHERE join_code_id=? AND user_id=? AND status='PENDING' LIMIT 1", [jc.id, auth.user.id]);
   if (!exists) {
     const reqType = jc.scope === "TENANT_ROLE" ? "MEMBERSHIP" : jc.scope;
     await run(
       `INSERT INTO join_requests (id, join_code_id, tenant_id, course_id, user_id, type, requested_role, status, created_at) VALUES (?,?,?,?,?,?,?,'PENDING',?)`,
-      [crypto.randomUUID(), jc.id, jc.tenant_id, jc.course_id, u.id, reqType, jc.role, now]
+      [crypto.randomUUID(), jc.id, jc.tenant_id, jc.course_id, auth.user.id, reqType, jc.role, now]
     );
   }
   redirect(`/join?success=request`);
 }
 
+// joinCreateAccountAction — new user creates an account via the join page.
+// Creates the qa_users row, applies the join code, then calls signIn() to
+// create the NextAuth JWT session. signIn() throws a redirect, so all join
+// code logic happens before it.
 async function joinCreateAccountAction(formData: FormData) {
   "use server";
   const codePlain = (formData.get("code") as string || "").toUpperCase().replaceAll(" ", "");
@@ -115,10 +174,12 @@ async function joinCreateAccountAction(formData: FormData) {
   const { APP_SECRET } = getEnv();
   const { first, run } = getDb();
 
+  // 1. Validate join code.
   const jc = await loadJoinCode(codePlain, APP_SECRET);
   const v = isCodeValid(jc);
   if (!v.ok || !jc) redirect(`/join?code=${encodeURIComponent(codePlain)}&error=${encodeURIComponent(v.why)}`);
 
+  // 2. Create account if email doesn't already exist.
   const now = new Date().toISOString();
   let u = await first<{ id: string }>("SELECT id FROM qa_users WHERE email=? AND status='ACTIVE'", [email]);
   let userId = u?.id;
@@ -134,32 +195,35 @@ async function joinCreateAccountAction(formData: FormData) {
     );
   }
 
-  // Create session.
-  const token = crypto.randomUUID() + "-" + crypto.randomUUID();
-  const tokenHashVal = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))))
-    .map(b => b.toString(16).padStart(2, "0")).join("");
-  const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  await run("INSERT INTO sessions (token_hash, user_id, active_tenant_id, expires_at, created_at) VALUES (?,?,?,?,?)",
-    [tokenHashVal, userId, jc.tenant_id, expires, now]);
-
-  const cookieStore = await cookies();
-  cookieStore.set("qa_sess", token, { path: "/", httpOnly: true, secure: true, sameSite: "lax", maxAge: 7 * 24 * 60 * 60 });
-
+  // 3. Apply join code BEFORE signIn (signIn throws a redirect and never returns).
   if (jc.auto_approve === 1) {
     await run(`UPDATE join_codes SET uses_approved = uses_approved + 1, updated_at=? WHERE id=? AND revoked=0 AND uses_approved < max_uses`, [now, jc.id]);
     await applyJoin(userId, jc, run, first);
-    redirect("/");
+  } else {
+    // Needs approval — create request.
+    const exists = await first("SELECT id FROM join_requests WHERE join_code_id=? AND user_id=? AND status='PENDING' LIMIT 1", [jc.id, userId]);
+    if (!exists) {
+      const reqType = jc.scope === "TENANT_ROLE" ? "MEMBERSHIP" : jc.scope;
+      await run(
+        `INSERT INTO join_requests (id, join_code_id, tenant_id, course_id, user_id, type, requested_role, status, created_at) VALUES (?,?,?,?,?,?,?,'PENDING',?)`,
+        [crypto.randomUUID(), jc.id, jc.tenant_id, jc.course_id, userId, reqType, jc.role, now]
+      );
+    }
   }
 
-  const exists = await first("SELECT id FROM join_requests WHERE join_code_id=? AND user_id=? AND status='PENDING' LIMIT 1", [jc.id, userId]);
-  if (!exists) {
-    const reqType = jc.scope === "TENANT_ROLE" ? "MEMBERSHIP" : jc.scope;
-    await run(
-      `INSERT INTO join_requests (id, join_code_id, tenant_id, course_id, user_id, type, requested_role, status, created_at) VALUES (?,?,?,?,?,?,?,'PENDING',?)`,
-      [crypto.randomUUID(), jc.id, jc.tenant_id, jc.course_id, userId, reqType, jc.role, now]
-    );
+  // 4. Create NextAuth JWT session — this throws a redirect to "/" and never returns.
+  //    The authorize() function in src/auth.ts will verify the password (the same one
+  //    we just used to create the account) and return the user object.
+  try {
+    await signIn("credentials", { email, password, redirectTo: "/" });
+  } catch (err: unknown) {
+    const e = err as { digest?: string };
+    if (typeof e.digest === "string" && e.digest.includes("NEXT_REDIRECT")) {
+      throw err;
+    }
+    // Unexpected error — redirect to join page with error.
+    redirect(`/join?code=${encodeURIComponent(codePlain)}&error=Something+went+wrong`);
   }
-  redirect(`/join?success=request`);
 }
 
 // Helper: apply join action (membership + enrolment/assignment).
@@ -299,10 +363,8 @@ export default async function JoinPage({
         </Card>
         <Card>
           <p className="text-sm text-gray-500 mb-3">You are logged in as <strong>{auth.user!.name}</strong>. Click below to join.</p>
-          <form action={joinLoginAction}>
+          <form action={joinLoggedInAction}>
             <input type="hidden" name="code" value={code} />
-            <input type="hidden" name="email" value={auth.user!.email} />
-            <input type="hidden" name="password" value="__session_auth__" />
             <button type="submit" className="w-full py-2 bg-teal-700 text-white font-semibold rounded-lg hover:bg-teal-800">
               Join
             </button>
