@@ -2,7 +2,7 @@
 // Root page — shows landing page if not logged in, redirects to dashboard if logged in.
 
 import { redirect } from "next/navigation";
-import { getAuth, pickActiveMembership, setActiveTenant } from "@/lib/auth";
+import { getAuth, pickActiveMembership } from "@/lib/auth";
 
 export default async function Home() {
   const auth = await getAuth();
@@ -16,12 +16,10 @@ export default async function Home() {
 
     if (!active) {
       if (auth.memberships.length === 1) {
-        await setActiveTenant(auth.memberships[0].tenant_id);
-        const role = auth.memberships[0].role;
-        if (role === "SCHOOL_ADMIN") redirect("/school");
-        if (role === "TEACHER") redirect("/teacher");
-        if (role === "STUDENT") redirect("/student");
-        redirect("/no-access");
+        // setActiveTenant() mutates cookies via NextAuth unstable_update and
+        // must run inside a Server Action or Route Handler (not a Server Component).
+        // Bounce through /switch-school to set the active tenant safely.
+        redirect(`/switch-school?tenant_id=${encodeURIComponent(auth.memberships[0].tenant_id)}`);
       }
       redirect("/choose-school");
     }
