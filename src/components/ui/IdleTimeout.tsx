@@ -48,8 +48,8 @@ export function IdleTimeout() {
   const showWarningRef = useRef(false);
 
   // Navigate to /logout — ends the session.
-  const doLogout = useCallback(() => {
-    window.location.href = "/logout";
+  const doLogout = useCallback((reason?: string) => {
+    window.location.href = `/logout?reason=${reason || "logout"}`;
   }, []);
 
   // Clear all timers.
@@ -83,7 +83,7 @@ export function IdleTimeout() {
           if (prev <= 1) {
             // Countdown reached 0 — log out.
             clearTimers();
-            doLogout();
+            doLogout("idle_timeout");
             return 0;
           }
           return prev - 1;
@@ -153,7 +153,7 @@ export function IdleTimeout() {
             Stay logged in
           </button>
           <button
-            onClick={doLogout}
+            onClick={() => doLogout("idle_timeout")}
             className="flex-1 py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors text-sm"
           >
             Log out now
