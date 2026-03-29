@@ -44,7 +44,8 @@ export function IdleTimeout() {
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Navigate to /logout — ends the session.
-  const doLogout = useCallback(() => {
+  const doLogout = useCallback((reason?: string) => {
+    console.log("Logging out — reason:", reason || "manual");
     window.location.href = "/logout";
   }, []);
 
@@ -68,16 +69,19 @@ export function IdleTimeout() {
 
     idleTimerRef.current = setTimeout(() => {
       // Idle timeout expired — show the warning modal.
+      console.log("Idle timer fired — showing modal");
       setShowWarning(true);
       setCountdown(WARNING_SECONDS);
 
       // Start the countdown.
+      console.log("Countdown started, value:", WARNING_SECONDS);
       countdownIntervalRef.current = setInterval(() => {
         setCountdown((prev) => {
+          console.log("Countdown tick:", prev - 1);
           if (prev <= 1) {
             // Countdown reached 0 — log out.
             clearTimers();
-            doLogout();
+            doLogout("countdown_expired");
             return 0;
           }
           return prev - 1;
@@ -88,6 +92,7 @@ export function IdleTimeout() {
 
   // "Stay logged in" button — resets the idle timer and closes the modal.
   const handleStayLoggedIn = useCallback(() => {
+    console.log("Stay logged in clicked");
     resetIdleTimer();
   }, [resetIdleTimer]);
 
