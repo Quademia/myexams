@@ -42,10 +42,13 @@ export function IdleTimeout() {
 
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Ref mirrors showWarning state so handleActivity can read the current value
+  // without showWarning being in the useEffect dependency array (which caused
+  // the modal to flicker — the effect re-ran and called resetIdleTimer).
+  const showWarningRef = useRef(false);
 
   // Navigate to /logout — ends the session.
-  const doLogout = useCallback((reason?: string) => {
-    console.log("Logging out — reason:", reason || "manual");
+  const doLogout = useCallback(() => {
     window.location.href = "/logout";
   }, []);
 
@@ -65,23 +68,22 @@ export function IdleTimeout() {
   const resetIdleTimer = useCallback(() => {
     clearTimers();
     setShowWarning(false);
+    showWarningRef.current = false;
     setCountdown(WARNING_SECONDS);
 
     idleTimerRef.current = setTimeout(() => {
       // Idle timeout expired — show the warning modal.
-      console.log("Idle timer fired — showing modal");
       setShowWarning(true);
+      showWarningRef.current = true;
       setCountdown(WARNING_SECONDS);
 
       // Start the countdown.
-      console.log("Countdown started, value:", WARNING_SECONDS);
       countdownIntervalRef.current = setInterval(() => {
         setCountdown((prev) => {
-          console.log("Countdown tick:", prev - 1);
           if (prev <= 1) {
             // Countdown reached 0 — log out.
             clearTimers();
-            doLogout("countdown_expired");
+            doLogout();
             return 0;
           }
           return prev - 1;
@@ -92,7 +94,6 @@ export function IdleTimeout() {
 
   // "Stay logged in" button — resets the idle timer and closes the modal.
   const handleStayLoggedIn = useCallback(() => {
-    console.log("Stay logged in clicked");
     resetIdleTimer();
   }, [resetIdleTimer]);
 
@@ -114,7 +115,8 @@ export function IdleTimeout() {
     const handleActivity = () => {
       // Only reset if the warning modal is NOT showing.
       // Once the warning is up, only the "Stay logged in" button resets.
-      if (!showWarning) {
+      // Read from the ref (not state) to avoid showWarning in the dep array.
+      if (!showWarningRef.current) {
         resetIdleTimer();
       }
     };
@@ -129,7 +131,7 @@ export function IdleTimeout() {
         window.removeEventListener(event, handleActivity);
       }
     };
-  }, [isLoggedIn, showWarning, resetIdleTimer, clearTimers]);
+  }, [isLoggedIn, resetIdleTimer, clearTimers]);
 
   // Don't render anything if not logged in or warning not showing.
   if (!isLoggedIn || !showWarning) return null;
