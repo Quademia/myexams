@@ -26,7 +26,7 @@ import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { pbkdf2Hex } from "@/lib/auth";
 import { logAuthEvent } from "@/lib/auth-events";
-import { createSession, countActiveSessions } from "@/lib/sessions";
+import { createSession, countActiveSessions, expireSession } from "@/lib/sessions";
 
 // Build and export the NextAuth handler + helpers.
 // We wrap everything in a function so we can await getCloudflareContext()
@@ -301,9 +301,6 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           }
         }
 
-        // Temporary diagnostic log — remove after testing.
-        console.log("signIn callback fired for provider:", account?.provider ?? "credentials");
-
         // Check concurrent session limit for ALL login types.
         // We look up qa_users by email since user.id may be NextAuth's id for SSO.
         try {
@@ -315,6 +312,40 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           if (qaUserRow) {
             const activeCount = await countActiveSessions(env.DB, qaUserRow.id);
             if (activeCount >= 2) {
+              // Log the blocked attempt to auth_events (fire-and-forget).
+              try {
+                await logAuthEvent({
+                  kind: account?.provider === "google" ? "LOGIN_GOOGLE" : account?.provider === "microsoft-entra-id" ? "LOGIN_MICROSOFT" : "LOGIN_EMAIL",
+                  identifier: user.email!,
+                  userId: qaUserRow.id,
+                  ok: false,
+                  errorCode: "max_sessions_reached",
+                  note: "concurrent session limit exceeded",
+                  tenantId: null,
+                  sessionId: null,
+                  loginMethodDetail: null,
+                  failureCountAtTime: activeCount,
+                  meta: { ipHash: null, uaHash: null, country: null, uaParsed: null },
+                });
+              } catch {
+                // Fire-and-forget — never block the redirect.
+              }
+
+              // Write a session row and immediately expire it for audit trail.
+              try {
+                const blockedToken = crypto.randomUUID();
+                const now = new Date().toISOString();
+                await createSession(env.DB, {
+                  sessionToken: blockedToken,
+                  qaUserId: qaUserRow.id,
+                  absoluteExpiresAt: now,
+                  meta: { ipHash: null, uaParsed: null },
+                });
+                await expireSession(env.DB, blockedToken, "max_sessions_reached");
+              } catch {
+                // Fire-and-forget — never block the redirect.
+              }
+
               return "/login?error=MaxSessionsReached";
             }
           }
