@@ -187,7 +187,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           const qaUserId = user.id;
 
           // Check how many active sessions this user already has.
-          const activeCount = await countActiveSessions(qaUserId);
+          const activeCount = await countActiveSessions(env.DB, qaUserId);
 
           if (activeCount >= 2) {
             // Too many sessions — throw so NextAuth redirects to error page.
@@ -199,7 +199,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 min for testing — match maxAge above
           const absoluteExpiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
 
-          await createSession({
+          await createSession(env.DB, {
             sessionToken,
             qaUserId,
             absoluteExpiresAt,

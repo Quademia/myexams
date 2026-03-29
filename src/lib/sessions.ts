@@ -3,12 +3,15 @@
 // NextAuth uses JWT cookies for auth — it never writes to the sessions table
 // with JWT strategy. We own this table entirely for our own session management.
 //
+// All three functions accept a D1Database binding as their first argument.
+// This avoids calling getCloudflareContext() internally, which fails silently
+// inside the NextAuth jwt callback on Cloudflare Workers. Instead, the caller
+// (src/auth.ts or logout/route.ts) passes the binding it already has.
+//
 // THREE FUNCTIONS:
 // - createSession() — writes a new session row on login
 // - countActiveSessions() — counts non-expired sessions for a user
 // - expireSession() — marks a session as expired (logout or superseded)
-
-import { getDb } from "@/lib/db";
 
 // ---------- createSession ----------
 // Writes one row to sessions when a user logs in.
@@ -21,20 +24,21 @@ interface CreateSessionParams {
   meta: { ipHash: string | null; uaParsed: string | null };
 }
 
-export async function createSession(params: CreateSessionParams): Promise<void> {
+export async function createSession(db: D1Database, params: CreateSessionParams): Promise<void> {
   try {
-    const { run } = getDb();
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const expiresUnix = Math.floor(new Date(params.absoluteExpiresAt).getTime() / 1000);
 
-    await run(
-      `INSERT INTO sessions
-         (id, sessionToken, userId, expires,
-          qa_user_id, created_at, last_seen_at, absolute_expires_at,
-          expired_at, expiry_reason, ip_hash, ua_parsed)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
+    await db
+      .prepare(
+        `INSERT INTO sessions
+           (id, sessionToken, userId, expires,
+            qa_user_id, created_at, last_seen_at, absolute_expires_at,
+            expired_at, expiry_reason, ip_hash, ua_parsed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
         id,
         params.sessionToken,
         params.qaUserId,       // repurpose NextAuth's userId column
@@ -47,8 +51,8 @@ export async function createSession(params: CreateSessionParams): Promise<void> 
         null,                  // expiry_reason
         params.meta.ipHash,
         params.meta.uaParsed,
-      ]
-    );
+      )
+      .run();
   } catch {
     // Fire-and-forget — session tracking must never break auth.
   }
@@ -60,16 +64,17 @@ export async function createSession(params: CreateSessionParams): Promise<void> 
 //   - absolute_expires_at > now (not past hard expiry)
 // Returns 0 on error.
 
-export async function countActiveSessions(qaUserId: string): Promise<number> {
+export async function countActiveSessions(db: D1Database, qaUserId: string): Promise<number> {
   try {
-    const { first } = getDb();
     const now = new Date().toISOString();
 
-    const row = await first<{ cnt: number }>(
-      `SELECT COUNT(*) AS cnt FROM sessions
-       WHERE qa_user_id = ? AND expired_at IS NULL AND absolute_expires_at > ?`,
-      [qaUserId, now]
-    );
+    const row = await db
+      .prepare(
+        `SELECT COUNT(*) AS cnt FROM sessions
+         WHERE qa_user_id = ? AND expired_at IS NULL AND absolute_expires_at > ?`
+      )
+      .bind(qaUserId, now)
+      .first<{ cnt: number }>();
 
     return row?.cnt ?? 0;
   } catch {
@@ -82,17 +87,18 @@ export async function countActiveSessions(qaUserId: string): Promise<number> {
 // Marks a session as expired. Used on logout and when superseding old sessions.
 // Fire-and-forget wrapped in try/catch — never throws.
 
-export async function expireSession(sessionToken: string, reason: string): Promise<void> {
+export async function expireSession(db: D1Database, sessionToken: string, reason: string): Promise<void> {
   try {
-    const { run } = getDb();
     const now = new Date().toISOString();
 
-    await run(
-      `UPDATE sessions
-       SET last_seen_at = ?, expired_at = ?, expiry_reason = ?
-       WHERE sessionToken = ?`,
-      [now, now, reason, sessionToken]
-    );
+    await db
+      .prepare(
+        `UPDATE sessions
+         SET last_seen_at = ?, expired_at = ?, expiry_reason = ?
+         WHERE sessionToken = ?`
+      )
+      .bind(now, now, reason, sessionToken)
+      .run();
   } catch {
     // Fire-and-forget — session cleanup must never break logout.
   }
