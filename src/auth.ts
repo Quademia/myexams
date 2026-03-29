@@ -353,6 +353,32 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           // Fire-and-forget — never block login because of a session count failure.
         }
 
+        // Log successful credentials login (SSO success is already logged above).
+        if (account?.provider === "credentials") {
+          try {
+            const credQaUser = await env.DB
+              .prepare("SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'")
+              .bind(user.email)
+              .first<{ id: string }>();
+
+            await logAuthEvent({
+              kind: "LOGIN_EMAIL",
+              identifier: user.email!,
+              userId: credQaUser?.id ?? null,
+              ok: true,
+              errorCode: null,
+              note: null,
+              tenantId: null,
+              sessionId: null,
+              loginMethodDetail: "returning",
+              failureCountAtTime: null,
+              meta: { ipHash: null, uaHash: null, country: null, uaParsed: null },
+            });
+          } catch {
+            // Fire-and-forget — logging must never block login.
+          }
+        }
+
         // Returning true means "allow the sign-in to proceed".
         return true;
       },

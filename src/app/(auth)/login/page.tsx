@@ -116,20 +116,9 @@ async function loginAction(formData: FormData) {
     redirect("/login?error=CredentialsSignin");
   }
 
-  // Password is correct — log success before calling signIn().
-  await logAuthEvent({
-    kind: "LOGIN_EMAIL",
-    identifier: email,
-    userId,
-    ok: true,
-    errorCode: null,
-    note: null,
-    tenantId: null,
-    sessionId: null,
-    loginMethodDetail: "returning",
-    failureCountAtTime: 0,
-    meta,
-  });
+  // Password is correct — success logging is handled in the signIn callback
+  // in src/auth.ts after the concurrent session check passes. We do NOT log
+  // here because the signIn callback may still block the login (max sessions).
 
   // 5. Call signIn() to create the session cookie and redirect to "/".
   //    Since we've already verified the password, this should always succeed.
