@@ -45,6 +45,8 @@ const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
 ];
 
 export function IdleTimeout() {
+  console.log("IdleTimeout component rendered");
+
   const [showWarning, setShowWarning] = useState(false);
   const [countdown, setCountdown] = useState(WARNING_SECONDS);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -102,6 +104,9 @@ export function IdleTimeout() {
 
   // Check for session cookie on mount.
   useEffect(() => {
+    console.log("IdleTimeout useEffect running");
+    console.log("hasSessionCookie result:", hasSessionCookie());
+    console.log("document.cookie value:", document.cookie);
     setIsLoggedIn(hasSessionCookie());
   }, []);
 
