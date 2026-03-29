@@ -40,7 +40,7 @@ interface LogResetRequestParams {
   actionNote: string;
   resetToken: string | null;
   status: string;
-  meta: { ipHash: string; uaHash: string; country: string; uaParsed: string };
+  meta: { ipHash: string | null; uaHash: string; country: string; uaParsed: string };
 }
 
 export async function logResetRequest(params: LogResetRequestParams): Promise<void> {

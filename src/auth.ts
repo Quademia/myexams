@@ -279,7 +279,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
       async signIn({ user, account }) {
         // Try to get real request metadata (IP, UA, country) from headers.
         // Falls back to nulls if headers() is not available in this context.
-        const nullMeta = { ipHash: null, uaHash: null, country: null, uaParsed: null };
+        const nullMeta: { ipHash: string | null; uaHash: string | null; country: string | null; uaParsed: string | null } = { ipHash: null, uaHash: null, country: null, uaParsed: null };
         let requestMeta = nullMeta;
         try {
           requestMeta = await getRequestMeta();
