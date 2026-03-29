@@ -284,12 +284,12 @@ export default async function SchoolJoinCodesPage({
   const error = params.error;
 
   // Read the newly created code from a cookie (not the URL, for security).
-  // The cookie is set by createCodeAction and cleared after reading.
+  // The cookie is set by createCodeAction with maxAge=60, so it auto-expires
+  // after 60 seconds. We do NOT delete it here — deleting cookies during page
+  // render throws a runtime error on Cloudflare Workers (cookies can only be
+  // modified inside Server Actions or Route Handlers, not during render).
   const cookieStore = await cookies();
   const newCode = cookieStore.get("qa_new_code")?.value || null;
-  if (newCode) {
-    cookieStore.delete("qa_new_code");
-  }
 
   // Pre-fill values from Duplicate button.
   const dupWho = params.dup_who || "";
