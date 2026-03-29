@@ -196,7 +196,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
 
       // The signIn callback runs after a provider authenticates a user but
       // BEFORE the session is created. We use it to auto-create a qa_users
-      // row for first-time Google/Microsoft SSO users.
+      // row exists in qa_users. Unregistered emails are rejected.
       async signIn({ user, account }) {
         // Only run for OAuth providers (Google, Microsoft).
         // Credentials are handled in the authorize function above.
@@ -205,68 +205,54 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
           account?.provider === "microsoft-entra-id"
         ) {
           const db = env.DB;
-          const now = new Date().toISOString();
           const kind = account.provider === "google" ? "LOGIN_GOOGLE" : "LOGIN_MICROSOFT";
           const nullMeta = { ipHash: null, uaHash: null, country: null, uaParsed: null };
 
-          // Check if a qa_users row already exists with this email.
+          // Check if an ACTIVE qa_users row exists with this email.
           const existing = await db
-            .prepare("SELECT id FROM qa_users WHERE email = ?")
+            .prepare("SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'")
             .bind(user.email)
             .first<{ id: string }>();
 
           if (!existing) {
-            // First-time SSO user — create a qa_users row.
-            // - id: a random UUID matching the existing pattern.
-            // - auth_id: the NextAuth user.id so we can link the two tables.
-            // - is_system_admin: 0 (regular user by default).
-            // - status: ACTIVE so they can log in immediately.
-            const id = crypto.randomUUID();
-            await db
-              .prepare(
-                `INSERT INTO qa_users (id, name, email, is_system_admin, status, created_at, updated_at, auth_id)
-                 VALUES (?, ?, ?, 0, 'ACTIVE', ?, ?, ?)`
-              )
-              .bind(id, user.name ?? "", user.email, now, now, user.id)
-              .run();
+            // Email not registered — reject the login and redirect to error page.
+            try {
+              await logAuthEvent({
+                kind,
+                identifier: user.email!,
+                userId: null,
+                ok: false,
+                errorCode: "no_account",
+                note: "sso_email_not_registered",
+                tenantId: null,
+                sessionId: null,
+                loginMethodDetail: null,
+                failureCountAtTime: null,
+                meta: nullMeta,
+              });
+            } catch {
+              // Fire-and-forget — logging must never block SSO login.
+            }
+            return "/login?error=NoAccount";
+          }
 
-            // Log first-time SSO login (fire-and-forget).
-            try {
-              await logAuthEvent({
-                kind,
-                identifier: user.email!,
-                userId: id,
-                ok: true,
-                errorCode: null,
-                note: null,
-                tenantId: null,
-                sessionId: null,
-                loginMethodDetail: "first_time_sso",
-                failureCountAtTime: null,
-                meta: nullMeta,
-              });
-            } catch {
-              // Fire-and-forget — logging must never block SSO login.
-            }
-          } else {
-            // Returning SSO user — log the login (fire-and-forget).
-            try {
-              await logAuthEvent({
-                kind,
-                identifier: user.email!,
-                userId: existing.id,
-                ok: true,
-                errorCode: null,
-                note: null,
-                tenantId: null,
-                sessionId: null,
-                loginMethodDetail: "returning",
-                failureCountAtTime: null,
-                meta: nullMeta,
-              });
-            } catch {
-              // Fire-and-forget — logging must never block SSO login.
-            }
+          // Returning SSO user — log the login (fire-and-forget).
+          try {
+            await logAuthEvent({
+              kind,
+              identifier: user.email!,
+              userId: existing.id,
+              ok: true,
+              errorCode: null,
+              note: null,
+              tenantId: null,
+              sessionId: null,
+              loginMethodDetail: "returning",
+              failureCountAtTime: null,
+              meta: nullMeta,
+            });
+          } catch {
+            // Fire-and-forget — logging must never block SSO login.
           }
         }
 

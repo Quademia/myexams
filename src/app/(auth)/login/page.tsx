@@ -219,7 +219,12 @@ export default async function LoginPage({
             Wrong email or password.
           </div>
         )}
-        {error && error !== "CredentialsSignin" && error !== "TooManyAttempts" && (
+        {error === "NoAccount" && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
+            This email is not registered on QAcademy. Please contact your administrator.
+          </div>
+        )}
+        {error && error !== "CredentialsSignin" && error !== "TooManyAttempts" && error !== "NoAccount" && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
             Something went wrong. Please try again.
           </div>
