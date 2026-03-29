@@ -185,7 +185,18 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
         // runs with a user present and no session token already stored.
         if (user?.id && !token.session_token) {
           try {
-            const qaUserId = user.id;
+            // Look up the qa_users.id by email — this is correct for ALL login types.
+            // For credentials, user.id is already qa_users.id but the lookup confirms it.
+            // For SSO, user.id is the NextAuth users table id — we need qa_users.id instead.
+            const qaUserRow = await env.DB
+              .prepare("SELECT id FROM qa_users WHERE email = ? AND status = 'ACTIVE'")
+              .bind(user.email)
+              .first<{ id: string }>();
+
+            // If we can't find the qa_users row, fall back to user.id.
+            // This should never happen in practice since the signIn callback
+            // already rejects unregistered emails.
+            const qaUserId = qaUserRow?.id ?? user.id;
 
             // Check how many active sessions this user already has.
             const activeCount = await countActiveSessions(env.DB, qaUserId);
