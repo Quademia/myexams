@@ -7,6 +7,7 @@ import { requireAuth, pickActiveMembership, roleLabel } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
 import { ApproverFilter } from "@/components/filters/ApproverFilter";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 
 // ============================================================
 // Server Actions
@@ -227,14 +228,7 @@ export default async function SittingGateSettingsPage({
                   {isActive ? "Active" : "Inactive"}
                 </span>
                 {isActive && (
-                  <form action={disableGateAction}>
-                    <input type="hidden" name="sitting_id" value={sittingId} />
-                    <input type="hidden" name="exam_id" value={examId} />
-                    <input type="hidden" name="gate_type" value={def.type} />
-                    <button type="submit" className="px-2 py-0.5 bg-red-50 text-red-700 text-[11px] font-semibold rounded-lg hover:bg-red-100">
-                      Disable Gate
-                    </button>
-                  </form>
+                  <ConfirmButton label="Disable" message="Disable this gate? All approvers and pending responses will be deleted." variant="warning" formAction={disableGateAction} fields={{ sitting_id: sittingId!, exam_id: examId!, gate_type: def.type }} />
                 )}
               </div>
             </div>
@@ -253,15 +247,7 @@ export default async function SittingGateSettingsPage({
                           <span className="text-xs text-gray-400 ml-2">{roleLabel(member.role)}</span>
                         )}
                       </div>
-                      <form action={removeApproverAction}>
-                        <input type="hidden" name="sitting_id" value={sittingId} />
-                        <input type="hidden" name="exam_id" value={examId} />
-                        <input type="hidden" name="gate_type" value={def.type} />
-                        <input type="hidden" name="user_id" value={a.user_id} />
-                        <button type="submit" className="px-2 py-0.5 bg-gray-100 text-gray-700 text-[11px] font-semibold rounded-lg hover:bg-gray-200">
-                          Remove
-                        </button>
-                      </form>
+                      <ConfirmButton label="Remove" message="Remove this approver?" formAction={removeApproverAction} fields={{ sitting_id: sittingId!, exam_id: examId!, gate_type: def.type, user_id: a.user_id }} />
                     </div>
                   );
                 })}

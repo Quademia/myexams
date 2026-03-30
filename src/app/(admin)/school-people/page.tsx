@@ -10,6 +10,7 @@ import { getEnv } from "@/lib/env";
 import { SchoolLayout } from "@/components/layout/SchoolLayout";
 import { Card } from "@/components/ui/Card";
 import { TabNav } from "@/components/ui/TabNav";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 
 // ============================================================
 // Server Actions
@@ -385,21 +386,7 @@ async function MembersTab({
                         </form>
                       </td>
                       <td className="py-3 px-2">
-                        <form action={removeMemberAction}>
-                          <input type="hidden" name="user_id" value={m.id} />
-                          <button
-                            type="submit"
-                            disabled={isSelf}
-                            title={isSelf ? "Cannot remove yourself" : undefined}
-                            className={`px-3 py-1 text-xs font-semibold rounded-lg ${
-                              isSelf
-                                ? "bg-gray-50 text-gray-300 cursor-not-allowed"
-                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                            }`}
-                          >
-                            Remove
-                          </button>
-                        </form>
+                        {!isSelf && <ConfirmButton label="Remove" message="Remove this person from the school? They will lose access to all courses and classes." formAction={removeMemberAction} fields={{ user_id: m.id }} />}
                       </td>
                     </tr>
                   );

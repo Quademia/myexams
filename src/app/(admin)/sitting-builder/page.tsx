@@ -10,6 +10,7 @@ import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
 import { TabNav } from "@/components/ui/TabNav";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 
 // ============================================================
 // Server Actions
@@ -372,13 +373,7 @@ async function PapersTab({ sittingId, tenantId }: { sittingId: string; tenantId:
                             className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 no-underline">
                             Edit
                           </a>
-                          <form action={removePaperAction}>
-                            <input type="hidden" name="sitting_id" value={sittingId} />
-                            <input type="hidden" name="paper_id" value={p.paper_id} />
-                            <button type="submit" className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                              Remove
-                            </button>
-                          </form>
+                          <ConfirmButton label="Remove" message="Remove this paper from the sitting?" formAction={removePaperAction} fields={{ sitting_id: sittingId, paper_id: p.paper_id }} />
                         </div>
                       </td>
                     </tr>

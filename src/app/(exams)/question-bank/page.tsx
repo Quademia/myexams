@@ -20,6 +20,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { BankQuestionFormFields } from "@/components/bank/BankQuestionFormFields";
 
 // ============================================================
@@ -425,12 +426,7 @@ export default async function QuestionBankPage({
                       {q.visibility === "SCHOOL" ? "Make personal" : "Share"}
                     </button>
                   </form>
-                  <form action={deleteBankQuestionAction}>
-                    <input type="hidden" name="question_id" value={q.id} />
-                    <button type="submit" className="px-2 py-1 bg-red-50 text-red-600 text-xs rounded hover:bg-red-100 w-full">
-                      Delete
-                    </button>
-                  </form>
+                  <ConfirmButton label="Delete" message="Delete this question from the bank? This cannot be undone." formAction={deleteBankQuestionAction} fields={{ question_id: q.id }} />
                 </div>
               ) : (
                 <span className="text-xs text-gray-400 italic">Read-only</span>

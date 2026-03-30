@@ -15,6 +15,7 @@ import { SchoolLayout } from "@/components/layout/SchoolLayout";
 import { Card } from "@/components/ui/Card";
 import { TabNav } from "@/components/ui/TabNav";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 
 // ============================================================
 // Server Actions — handle form submissions for each tab
@@ -400,13 +401,7 @@ async function TeachersTab({ courseId, tenantId }: { courseId: string; tenantId:
             {assigned.map((t) => (
               <li key={t.id} className="flex items-center justify-between text-sm">
                 <span>{t.name} <span className="text-gray-400">({t.email})</span></span>
-                <form action={unassignTeacherAction}>
-                  <input type="hidden" name="course_id" value={courseId} />
-                  <input type="hidden" name="user_id" value={t.id} />
-                  <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                    Remove
-                  </button>
-                </form>
+                <ConfirmButton label="Remove" message="Remove this teacher from the course?" formAction={unassignTeacherAction} fields={{ course_id: courseId, user_id: t.id }} />
               </li>
             ))}
           </ul>
@@ -463,13 +458,7 @@ async function StudentsTab({ courseId, tenantId }: { courseId: string; tenantId:
             {enrolled.map((s) => (
               <li key={s.id} className="flex items-center justify-between text-sm">
                 <span>{s.name} <span className="text-gray-400">({s.email})</span></span>
-                <form action={unenrolStudentAction}>
-                  <input type="hidden" name="course_id" value={courseId} />
-                  <input type="hidden" name="user_id" value={s.id} />
-                  <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                    Remove
-                  </button>
-                </form>
+                <ConfirmButton label="Remove" message="Remove this student from the course?" formAction={unenrolStudentAction} fields={{ course_id: courseId, user_id: s.id }} />
               </li>
             ))}
           </ul>
@@ -544,13 +533,7 @@ async function ClassesTab({ courseId, tenantId }: { courseId: string; tenantId: 
                     — {cl.enrolled_count} of {cl.student_count} students enrolled
                   </span>
                 </span>
-                <form action={unenrolClassAction}>
-                  <input type="hidden" name="course_id" value={courseId} />
-                  <input type="hidden" name="class_id" value={cl.id} />
-                  <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                    Remove Class
-                  </button>
-                </form>
+                <ConfirmButton label="Remove" message="Remove this class from the course? This will unenrol all students in the class." formAction={unenrolClassAction} fields={{ course_id: courseId, class_id: cl.id }} />
               </li>
             ))}
           </ul>
@@ -657,13 +640,7 @@ async function JoinCodesTab({ courseId, tenantId, newCode, dupWho, dupAuto, dupM
                         >
                           Duplicate
                         </a>
-                        <form action={revokeCodeAction}>
-                          <input type="hidden" name="code_id" value={c.id} />
-                          <input type="hidden" name="course_id" value={courseId} />
-                          <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                            Revoke
-                          </button>
-                        </form>
+                        <ConfirmButton label="Revoke" message="Revoke this join code? It can no longer be used." formAction={revokeCodeAction} fields={{ code_id: c.id, course_id: courseId }} />
                       </div>
                     </td>
                   </tr>

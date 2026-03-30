@@ -10,6 +10,7 @@ import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { SchoolLayout } from "@/components/layout/SchoolLayout";
 import { Card } from "@/components/ui/Card";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 
 // ============================================================
 // Server Actions
@@ -432,12 +433,7 @@ export default async function SchoolJoinCodesPage({
                         >
                           Duplicate
                         </a>
-                        <form action={revokeCodeAction}>
-                          <input type="hidden" name="code_id" value={c.id} />
-                          <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                            Revoke
-                          </button>
-                        </form>
+                        <ConfirmButton label="Revoke" message="Revoke this join code? It can no longer be used." formAction={revokeCodeAction} fields={{ code_id: c.id }} />
                       </div>
                     </td>
                   </tr>
@@ -540,12 +536,7 @@ export default async function SchoolJoinCodesPage({
                             Approve
                           </button>
                         </form>
-                        <form action={rejectRequestAction}>
-                          <input type="hidden" name="request_id" value={p.id} />
-                          <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                            Reject
-                          </button>
-                        </form>
+                        <ConfirmButton label="Reject" message="Reject this join request?" formAction={rejectRequestAction} fields={{ request_id: p.id }} />
                       </div>
                     </td>
                   </tr>

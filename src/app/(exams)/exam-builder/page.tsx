@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { TabNav } from "@/components/ui/TabNav";
 import { GradeBandsEditor } from "@/components/exam/GradeBandsEditor";
 import { CustomFieldsEditor } from "@/components/exam/CustomFieldsEditor";
@@ -998,12 +999,7 @@ export default async function ExamBuilderPage({
                 <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Publish Exam</button>
               </>
             ) : (
-              <form action={publishAction}>
-                <input type="hidden" name="exam_id" value={exam.id} />
-                <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                  Publish Exam
-                </button>
-              </form>
+              <ConfirmButton label="Publish Exam" message="Publish this exam? Students will be able to see and start it immediately." variant="warning" confirmLabel="Yes, publish" formAction={publishAction} fields={{ exam_id: exam.id }} />
             )}
           </Card>
 
@@ -1048,22 +1044,12 @@ export default async function ExamBuilderPage({
                 <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg p-3 mb-3">
                   ⚠️ Your scheduled close date has passed.
                 </div>
-                <form action={closeAction}>
-                  <input type="hidden" name="exam_id" value={exam.id} />
-                  <button type="submit" className="px-4 py-2 bg-red-50 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-100">
-                    Close Exam Now
-                  </button>
-                </form>
+                <ConfirmButton label="Close Exam" message="Close this exam? All active attempts will end and no new attempts can start." variant="warning" confirmLabel="Yes, close" formAction={closeAction} fields={{ exam_id: exam.id }} />
               </>
             ) : (
               <>
                 <p className="text-sm text-gray-500 mb-3">No automatic close date is set.</p>
-                <form action={closeAction}>
-                  <input type="hidden" name="exam_id" value={exam.id} />
-                  <button type="submit" className="px-4 py-2 bg-red-50 text-red-700 text-sm font-semibold rounded-lg hover:bg-red-100">
-                    Close Exam Now
-                  </button>
-                </form>
+                <ConfirmButton label="Close Exam" message="Close this exam? All active attempts will end and no new attempts can start." variant="warning" confirmLabel="Yes, close" formAction={closeAction} fields={{ exam_id: exam.id }} />
               </>
             )}
           </Card>
@@ -1126,12 +1112,7 @@ export default async function ExamBuilderPage({
                 <button disabled className="px-4 py-2 bg-gray-200 text-gray-400 text-sm font-semibold rounded-lg cursor-not-allowed">Release Results</button>
               </>
             ) : (
-              <form action={releaseResultsAction}>
-                <input type="hidden" name="exam_id" value={exam.id} />
-                <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                  Release Results Now
-                </button>
-              </form>
+              <ConfirmButton label="Release Results" message="Release results to students? They will be able to see their scores immediately." variant="warning" confirmLabel="Yes, release" formAction={releaseResultsAction} fields={{ exam_id: exam.id }} />
             )}
           </Card>
         </>
@@ -1296,11 +1277,7 @@ async function QuestionsTab({ examId, locked, editQId }: { examId: string; locke
                   {/* Edit */}
                   <a href={`/exam-builder?exam_id=${examId}&tab=questions&edit_q=${q.id}`} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 text-center no-underline">Edit</a>
                   {/* Delete */}
-                  <form action={deleteQuestionAction}>
-                    <input type="hidden" name="exam_id" value={examId} />
-                    <input type="hidden" name="question_id" value={q.id} />
-                    <button type="submit" className="px-2 py-1 bg-red-50 text-red-600 text-xs rounded hover:bg-red-100 w-full">Delete</button>
-                  </form>
+                  <ConfirmButton label="Delete" message="Delete this question? This cannot be undone." formAction={deleteQuestionAction} fields={{ exam_id: examId, question_id: q.id }} />
                 </div>
               )}
             </div>
@@ -1390,11 +1367,7 @@ async function AccessTab({ examId, courseId, tenantId, examStatus }: { examId: s
                     <td className="py-2 px-2 text-gray-500">{s.student_email}</td>
                     {examStatus !== "CLOSED" && (
                       <td className="py-2 px-2">
-                        <form action={removeAccessAction}>
-                          <input type="hidden" name="exam_id" value={examId} />
-                          <input type="hidden" name="access_id" value={s.id} />
-                          <button type="submit" className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-lg hover:bg-gray-200">Remove</button>
-                        </form>
+                        <ConfirmButton label="Remove" message="Remove this student's access to the exam?" formAction={removeAccessAction} fields={{ exam_id: examId, access_id: s.id }} />
                       </td>
                     )}
                   </tr>
@@ -1528,12 +1501,7 @@ async function ResultsTab({ examId, tenantId, resultsPublished, maxAttempts, pas
         <Card>
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-600">Results have not been released to students yet.</p>
-            <form action={releaseResultsAction}>
-              <input type="hidden" name="exam_id" value={examId} />
-              <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                Release Results
-              </button>
-            </form>
+            <ConfirmButton label="Release Results" message="Release results to students? They will be able to see their scores immediately." variant="warning" confirmLabel="Yes, release" formAction={releaseResultsAction} fields={{ exam_id: examId }} />
           </div>
         </Card>
       )}

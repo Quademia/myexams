@@ -8,6 +8,7 @@ import { SchoolLayout } from "@/components/layout/SchoolLayout";
 import { Card } from "@/components/ui/Card";
 import { TabNav } from "@/components/ui/TabNav";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 
 // ============================================================
 // Server Actions
@@ -225,12 +226,7 @@ export default async function SchoolClassPage({
             </form>
           </Card>
           <Card title="Archive">
-            <form action={archiveClassAction}>
-              <input type="hidden" name="class_id" value={cls.id} />
-              <button type="submit" className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200">
-                {cls.status === "ACTIVE" ? "Archive class" : "Unarchive class"}
-              </button>
-            </form>
+            <ConfirmButton label="Archive" message="Archive this class? It will no longer be active." variant="warning" formAction={archiveClassAction} fields={{ class_id: cls.id }} />
           </Card>
         </>
       )}
@@ -275,13 +271,7 @@ async function StudentsTab({ classId, tenantId }: { classId: string; tenantId: s
             {students.map((s) => (
               <li key={s.id} className="flex items-center justify-between text-sm">
                 <span>{s.name} <span className="text-gray-400">({s.email})</span></span>
-                <form action={removeStudentAction}>
-                  <input type="hidden" name="class_id" value={classId} />
-                  <input type="hidden" name="user_id" value={s.id} />
-                  <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                    Remove
-                  </button>
-                </form>
+                <ConfirmButton label="Remove" message="Remove this student from the class?" formAction={removeStudentAction} fields={{ class_id: classId, user_id: s.id }} />
               </li>
             ))}
           </ul>
@@ -353,13 +343,7 @@ async function CoursesTab({ classId, tenantId }: { classId: string; tenantId: st
                     ({c.enrolled_count} / {totalInClass} students enrolled)
                   </span>
                 </span>
-                <form action={unenrolCourseAction}>
-                  <input type="hidden" name="class_id" value={classId} />
-                  <input type="hidden" name="course_id" value={c.id} />
-                  <button type="submit" className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200">
-                    Unlink
-                  </button>
-                </form>
+                <ConfirmButton label="Remove" message="Remove this course from the class? This will unenrol all class students from the course." formAction={unenrolCourseAction} fields={{ class_id: classId, course_id: c.id }} />
               </li>
             ))}
           </ul>
