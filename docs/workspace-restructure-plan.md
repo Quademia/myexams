@@ -77,7 +77,7 @@ These are built once and used by all workspaces.
 
 - [x] Merge /school-sittings and /sittings into one unified route
       (completed 2026-03-30 — /sittings deleted, /school-sittings is now the single sittings page)
-- [ ] Decide profile page approach
+- [x] Decide profile page approach — done 2026-03-30
       (decision made: becomes a drawer accessible from every workspace header)
 
 ---
@@ -86,16 +86,16 @@ These are built once and used by all workspaces.
 
 Build once, used by all four roles.
 
-- [ ] WorkspaceShell component
+- [x] WorkspaceShell component — done 2026-03-30
       Desktop: sidebar always visible. Mobile: sidebar behind hamburger menu.
       Sidebar items passed as props per role.
-- [ ] Sidebar navigation with future placeholder slots
+- [x] Sidebar navigation with future placeholder slots — done 2026-03-30
       Placeholder items are greyed out and labelled "coming soon"
-- [ ] Drawer shell component
+- [x] Drawer shell component — done 2026-03-30
       Right-side slide-in, one at a time, content passed as children
-- [ ] Full-screen modal component
-      Covers viewport, own scroll, for rich content (not confirm dialogs)
-- [ ] Profile drawer
+- [x] LargeModal component — done 2026-03-30
+      (built as LargeModal — centred large panel, not full screen, workspace visible behind backdrop)
+- [x] Profile drawer — done 2026-03-30
       Replaces standalone /profile page for authenticated users
 
 ---
@@ -213,4 +213,4 @@ Tasks:
 
 ---
 
-*Last updated: 2026-03-30 — Initial plan agreed.*
+*Last updated: 2026-03-30 — Phase 1 complete, Phase 2 complete.*

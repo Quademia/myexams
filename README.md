@@ -339,6 +339,11 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - ~~ConfirmButton client component built (`src/components/ui/ConfirmButton.tsx`) — modal confirmation with danger/warning variants, programmatic form submit via useRef~~ ✅ Done 2026-03-30
 - ~~ConfirmButton wired to 21 destructive/consequential actions across 8 files — includes deletes, removes, revokes, publish, close, release results, disable gate. Self-removal guard preserved on school-people page.~~ ✅ Done 2026-03-30
 
+### Immediate — Prompt 6
+- ~~Merged `/sittings` into `/school-sittings` — single route, added created date column, removed duplicate~~ ✅ Done 2026-03-30
+- ~~Built Phase 2 shared workspace components: WorkspaceShell, SidebarNav, WorkspaceHeader, DrawerShell, LargeModal, ProfileDrawer~~ ✅ Done 2026-03-30
+- ~~LargeModal is a large centred panel (max-w-3xl, max-h-88vh) — workspace always visible behind backdrop~~ ✅ Done 2026-03-30
+
 ### Future
 - Phase 10 — Question Bank bulk CSV import
 - Phase 11 — UI/design polish sprint + PWA installability
@@ -351,4 +356,4 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 ---
 
-*Last updated: 2026-03-30 — Production timing values, toast notifications (58 actions), confirm dialogs (21 actions).*
+*Last updated: 2026-03-30 — Phase 1 + Phase 2 workspace restructure complete, toast notifications (58 actions), confirm dialogs (21 actions).*
