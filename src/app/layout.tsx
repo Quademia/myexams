@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { auth } from "@/auth";
 import { IdleTimeout } from "@/components/ui/IdleTimeout";
+import { ToastProvider } from "@/components/ui/Toast";
 
 // This is the root layout — it wraps every page in the app.
 // Think of it as the <html> and <body> tags that every page shares.
@@ -27,6 +28,7 @@ export default async function RootLayout({
         data-authed={isAuthed ? "true" : "false"}
       >
         <IdleTimeout />
+        <ToastProvider />
         {children}
       </body>
     </html>
