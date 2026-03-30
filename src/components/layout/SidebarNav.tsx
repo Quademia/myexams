@@ -13,6 +13,7 @@ export type NavItem = {
   icon: string;
   soon?: boolean;
   active?: boolean;
+  badge?: number;
   divider?: boolean;
   dividerLabel?: string;
 };
@@ -86,14 +87,21 @@ function NavContent({
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              className={`flex items-center px-3 py-2 rounded-lg text-sm no-underline ${
+              className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm no-underline ${
                 isActive
                   ? "bg-teal-50 text-teal-700 font-semibold"
                   : "text-gray-600 hover:bg-gray-50"
               }`}
             >
-              <span className="mr-2">{item.icon}</span>
-              {item.label}
+              <span>
+                <span className="mr-2">{item.icon}</span>
+                {item.label}
+              </span>
+              {item.badge && item.badge > 0 && (
+                <span className="text-xs bg-teal-700 text-white px-1.5 py-0.5 rounded-full font-semibold min-w-[18px] text-center">
+                  {item.badge}
+                </span>
+              )}
             </a>
           );
         })}
