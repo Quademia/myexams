@@ -89,10 +89,13 @@ async function joinLoginAction(formData: FormData) {
   // 3. Apply join code BEFORE signIn (signIn throws a redirect and never returns).
   const now = new Date().toISOString();
 
+  let needsApproval = false;
+
   if (jc.auto_approve === 1) {
     await run(`UPDATE join_codes SET uses_approved = uses_approved + 1, updated_at=? WHERE id=? AND revoked=0 AND uses_approved < max_uses`, [now, jc.id]);
     await applyJoin(u.id, jc, run, first);
   } else {
+    needsApproval = true;
     // Needs approval — create request.
     const exists = await first("SELECT id FROM join_requests WHERE join_code_id=? AND user_id=? AND status='PENDING' LIMIT 1", [jc.id, u.id]);
     if (!exists) {
@@ -104,6 +107,12 @@ async function joinLoginAction(formData: FormData) {
     }
   }
 
+  if (needsApproval) {
+    // Join request has been created successfully; don't send user into "/" flow
+    // because they have no active membership yet and would hit /no-access.
+    redirect(`/join?success=request`);
+  }
+
   // 4. Create NextAuth JWT session — this throws a redirect to "/" and never returns.
   //    The root page "/" handles setting active_tenant_id automatically.
   try {
@@ -113,8 +122,8 @@ async function joinLoginAction(formData: FormData) {
     if (typeof e.digest === "string" && e.digest.includes("NEXT_REDIRECT")) {
       throw err;
     }
-    // Unexpected error — redirect to join page with error.
-    redirect(`/join?code=${encodeURIComponent(codePlain)}&error=Something+went+wrong`);
+    // Join write succeeded but auth session creation failed.
+    redirect(`/join?success=joined`);
   }
 }
 
@@ -197,10 +206,13 @@ async function joinCreateAccountAction(formData: FormData) {
   );
 
   // 3. Apply join code BEFORE signIn (signIn throws a redirect and never returns).
+  let needsApproval = false;
+
   if (jc.auto_approve === 1) {
     await run(`UPDATE join_codes SET uses_approved = uses_approved + 1, updated_at=? WHERE id=? AND revoked=0 AND uses_approved < max_uses`, [now, jc.id]);
     await applyJoin(userId, jc, run, first);
   } else {
+    needsApproval = true;
     // Needs approval — create request.
     const exists = await first("SELECT id FROM join_requests WHERE join_code_id=? AND user_id=? AND status='PENDING' LIMIT 1", [jc.id, userId]);
     if (!exists) {
@@ -210,6 +222,11 @@ async function joinCreateAccountAction(formData: FormData) {
         [crypto.randomUUID(), jc.id, jc.tenant_id, jc.course_id, userId, reqType, jc.role, now]
       );
     }
+  }
+
+  if (needsApproval) {
+    // Account + pending request were created successfully.
+    redirect(`/join?success=request`);
   }
 
   // 4. Create NextAuth JWT session — this throws a redirect to "/" and never returns.
@@ -222,8 +239,8 @@ async function joinCreateAccountAction(formData: FormData) {
     if (typeof e.digest === "string" && e.digest.includes("NEXT_REDIRECT")) {
       throw err;
     }
-    // Unexpected error — redirect to join page with error.
-    redirect(`/join?code=${encodeURIComponent(codePlain)}&error=Something+went+wrong`);
+    // Join write succeeded but auth session creation failed.
+    redirect(`/join?success=joined`);
   }
 }
 
@@ -294,6 +311,21 @@ export default async function JoinPage({
           <p className="text-sm text-green-700 mt-2">A School Admin must approve this request.</p>
           <div className="flex gap-3 mt-3 text-sm">
             <a href="/" className="text-teal-700 hover:underline">Dashboard</a>
+            <a href="/join" className="text-teal-700 hover:underline">Join another</a>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (success === "joined") {
+    return (
+      <main className="max-w-md mx-auto p-6 mt-12">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+          <h1 className="text-lg font-bold text-green-800">Joined successfully</h1>
+          <p className="text-sm text-green-700 mt-2">Your join was applied, but we could not sign you in automatically.</p>
+          <div className="flex gap-3 mt-3 text-sm">
+            <a href="/login" className="text-teal-700 hover:underline">Login</a>
             <a href="/join" className="text-teal-700 hover:underline">Join another</a>
           </div>
         </div>
