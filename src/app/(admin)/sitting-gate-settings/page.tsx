@@ -51,7 +51,7 @@ async function addApproverAction(formData: FormData) {
     );
   }
 
-  redirect(`/sitting-gate-settings?sitting_id=${sittingId}&exam_id=${examId}`);
+  redirect(`/sitting-gate-settings?sitting_id=${sittingId}&exam_id=${examId}&toast=Approver+added`);
 }
 
 async function disableGateAction(formData: FormData) {
@@ -81,7 +81,7 @@ async function disableGateAction(formData: FormData) {
     [examId, gateType, active.tenant_id]
   );
 
-  redirect(`/sitting-gate-settings?sitting_id=${sittingId}&exam_id=${examId}`);
+  redirect(`/sitting-gate-settings?sitting_id=${sittingId}&exam_id=${examId}&toast=Gate+disabled`);
 }
 
 async function removeApproverAction(formData: FormData) {
@@ -108,7 +108,7 @@ async function removeApproverAction(formData: FormData) {
     [examId, gateType, userId, active.tenant_id]
   );
 
-  redirect(`/sitting-gate-settings?sitting_id=${sittingId}&exam_id=${examId}`);
+  redirect(`/sitting-gate-settings?sitting_id=${sittingId}&exam_id=${examId}&toast=Approver+removed`);
 }
 
 // ============================================================

@@ -36,7 +36,7 @@ async function changePasswordAction(formData: FormData) {
   await run("UPDATE qa_users SET password_salt=?, password_hash=?, password_iter=?, updated_at=? WHERE id=?",
     [saltHex, hashHex, iter, new Date().toISOString(), auth.user!.id]);
 
-  redirect("/profile?success=1");
+  redirect("/profile?success=1&toast=Password+changed");
 }
 
 export default async function ProfilePage({

@@ -56,7 +56,7 @@ async function createBankQuestionAction(formData: FormData) {
 
   await saveBankOptions(newId, qType, formData, now);
 
-  redirect("/question-bank");
+  redirect("/question-bank?toast=Question+added+to+bank");
 }
 
 async function updateBankQuestionAction(formData: FormData) {
@@ -100,7 +100,7 @@ async function updateBankQuestionAction(formData: FormData) {
   await run("DELETE FROM question_bank_options WHERE bank_question_id=?", [questionId]);
   await saveBankOptions(questionId, qType, formData, now);
 
-  redirect("/question-bank");
+  redirect("/question-bank?toast=Question+updated");
 }
 
 async function deleteBankQuestionAction(formData: FormData) {
@@ -130,7 +130,7 @@ async function deleteBankQuestionAction(formData: FormData) {
   // We don't delete the exam questions — just remove the bank link.
   await run("UPDATE exam_questions SET bank_question_id=NULL WHERE bank_question_id=?", [questionId]);
 
-  redirect("/question-bank");
+  redirect("/question-bank?toast=Question+deleted");
 }
 
 async function shareToggleAction(formData: FormData) {
@@ -156,7 +156,11 @@ async function shareToggleAction(formData: FormData) {
   const newVis = existing.visibility === "SCHOOL" ? "PERSONAL" : "SCHOOL";
   await run("UPDATE question_bank SET visibility=?, updated_at=? WHERE id=?", [newVis, now, questionId]);
 
-  redirect("/question-bank");
+  if (newVis === "SCHOOL") {
+    redirect("/question-bank?toast=Question+shared+with+school");
+  } else {
+    redirect("/question-bank?toast=Question+set+to+private");
+  }
 }
 
 // ── Helper: save bank question options ──────────────────────────────────────

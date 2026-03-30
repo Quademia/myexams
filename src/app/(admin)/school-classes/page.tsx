@@ -28,7 +28,7 @@ async function createClassAction(formData: FormData) {
     [crypto.randomUUID(), active.tenant_id, name, yearGroup || null, academicYear || null, description || null, now, now]
   );
 
-  redirect("/school-classes");
+  redirect("/school-classes?toast=Class+created");
 }
 
 export default async function SchoolClassesPage() {

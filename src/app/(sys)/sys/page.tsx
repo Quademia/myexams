@@ -88,7 +88,7 @@ async function createSchoolAction(formData: FormData) {
     );
   }
 
-  redirect("/sys?module=schools");
+  redirect("/sys?module=schools&toast=School+created");
 }
 
 async function addMemberAction(formData: FormData) {
@@ -133,6 +133,7 @@ async function addMemberAction(formData: FormData) {
   if (q) params.set("q", q);
   params.set("drawer", "user-access");
   params.set("userId", userId);
+  params.set("toast", "Member added");
   redirect(`/sys?${params.toString()}`);
 }
 

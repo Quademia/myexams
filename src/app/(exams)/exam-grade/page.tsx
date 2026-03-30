@@ -86,7 +86,7 @@ async function gradeAction(formData: FormData) {
     [scoreRaw, scoreTotal, scorePct, grade, gradingStatus, now, attemptId, active.tenant_id]
   );
 
-  redirect(`/exam-builder?exam_id=${examId}&tab=results`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=results&toast=Grades+saved`);
 }
 
 async function gradingReviewRespondAction(formData: FormData) {
@@ -151,7 +151,11 @@ async function gradingReviewRespondAction(formData: FormData) {
     [response, note, now, pendingResp.id]
   );
 
-  redirect("/approvals");
+  if (response === "APPROVED") {
+    redirect("/approvals?toast=Approved");
+  } else {
+    redirect("/approvals?toast=Rejected&toast_type=error");
+  }
 }
 
 // ============================================================

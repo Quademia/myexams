@@ -26,7 +26,7 @@ async function createCourseAction(formData: FormData) {
     [crypto.randomUUID(), active.tenant_id, title, now, now]
   );
 
-  redirect("/school-courses");
+  redirect("/school-courses?toast=Course+created");
 }
 
 export default async function SchoolCoursesPage() {

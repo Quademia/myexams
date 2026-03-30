@@ -21,7 +21,7 @@ async function createSittingAction() {
      VALUES (?,?,?,?,?,'DRAFT',?,?,?)`,
     [id, active.tenant_id, "New Sitting", null, null, auth.user!.id, now, now]
   );
-  redirect(`/sitting-builder?sitting_id=${id}`);
+  redirect(`/sitting-builder?sitting_id=${id}&toast=Sitting+created`);
 }
 
 function StatusBadge({ status }: { status: string }) {

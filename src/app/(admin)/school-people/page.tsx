@@ -37,7 +37,7 @@ async function updateRoleAction(formData: FormData) {
   );
   if (!m) redirect("/school-people");
   await run("UPDATE memberships SET role=?, updated_at=? WHERE id=?", [role, new Date().toISOString(), m.id]);
-  redirect("/school-people");
+  redirect("/school-people?toast=Role+updated");
 }
 
 async function removeMemberAction(formData: FormData) {
@@ -63,7 +63,7 @@ async function removeMemberAction(formData: FormData) {
     await run("DELETE FROM course_teachers WHERE course_id=? AND user_id=?", [c.id, userId]);
     await run("DELETE FROM enrollments WHERE course_id=? AND user_id=?", [c.id, userId]);
   }
-  redirect("/school-people");
+  redirect("/school-people?toast=Member+removed");
 }
 
 async function checkEmailAction(formData: FormData) {
@@ -110,7 +110,7 @@ async function addExistingUserAction(formData: FormData) {
   } else {
     await run("UPDATE memberships SET role=?, status='ACTIVE', updated_at=? WHERE id=?", [role, now, m.id]);
   }
-  redirect("/school-people?tab=members");
+  redirect("/school-people?tab=members&toast=Person+added+to+school");
 }
 
 async function addNewUserAction(formData: FormData) {
@@ -157,7 +157,7 @@ async function addNewUserAction(formData: FormData) {
   } else {
     await run("UPDATE memberships SET role=?, status='ACTIVE', updated_at=? WHERE id=?", [role, now, m.id]);
   }
-  redirect("/school-people?tab=members");
+  redirect("/school-people?tab=members&toast=Person+created+and+added");
 }
 
 // ============================================================

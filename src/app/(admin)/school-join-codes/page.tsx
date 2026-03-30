@@ -76,7 +76,7 @@ async function createCodeAction(formData: FormData) {
     sameSite: "lax",
     maxAge: 60, // expires in 60 seconds — only needs to survive the redirect
   });
-  redirect("/school-join-codes");
+  redirect("/school-join-codes?toast=Join+code+created");
 }
 
 async function revokeCodeAction(formData: FormData) {
@@ -89,7 +89,7 @@ async function revokeCodeAction(formData: FormData) {
   const { run } = getDb();
   await run("UPDATE join_codes SET revoked=1, updated_at=? WHERE id=? AND tenant_id=?",
     [new Date().toISOString(), codeId, active.tenant_id]);
-  redirect("/school-join-codes");
+  redirect("/school-join-codes?toast=Join+code+revoked");
 }
 
 async function approveRequestAction(formData: FormData) {
@@ -244,7 +244,7 @@ async function approveRequestAction(formData: FormData) {
 
   await run("UPDATE join_requests SET status='APPROVED', reviewed_by_user_id=?, reviewed_at=? WHERE id=?",
     [auth.user!.id, now, reqId]);
-  redirect("/school-join-codes");
+  redirect("/school-join-codes?toast=Request+approved");
 }
 
 async function rejectRequestAction(formData: FormData) {
@@ -259,7 +259,7 @@ async function rejectRequestAction(formData: FormData) {
     "UPDATE join_requests SET status='REJECTED', reviewed_by_user_id=?, reviewed_at=? WHERE id=? AND tenant_id=? AND status='PENDING'",
     [auth.user!.id, new Date().toISOString(), reqId, active.tenant_id]
   );
-  redirect("/school-join-codes");
+  redirect("/school-join-codes?toast=Request+rejected&toast_type=error");
 }
 
 // ============================================================

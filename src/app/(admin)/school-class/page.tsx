@@ -31,7 +31,7 @@ async function updateClassAction(formData: FormData) {
     "UPDATE classes SET name=?, year_group=?, academic_year=?, description=?, updated_at=? WHERE id=? AND tenant_id=?",
     [name, yearGroup || null, academicYear || null, description || null, new Date().toISOString(), classId, active.tenant_id]
   );
-  redirect(`/school-class?class_id=${classId}&tab=details`);
+  redirect(`/school-class?class_id=${classId}&tab=details&toast=Details+saved`);
 }
 
 async function archiveClassAction(formData: FormData) {
@@ -49,7 +49,7 @@ async function archiveClassAction(formData: FormData) {
   await run("UPDATE classes SET status=?, updated_at=? WHERE id=? AND tenant_id=?",
     [newStatus, new Date().toISOString(), classId, active.tenant_id]);
   // #15 — Redirect to class list after archive/unarchive (matches old code).
-  redirect("/school-classes");
+  redirect("/school-classes?toast=Class+archived");
 }
 
 async function addStudentAction(formData: FormData) {
@@ -76,7 +76,7 @@ async function addStudentAction(formData: FormData) {
     await run("INSERT INTO class_students (id, class_id, user_id, created_at) VALUES (?,?,?,?)",
       [crypto.randomUUID(), classId, userId, new Date().toISOString()]);
   }
-  redirect(`/school-class?class_id=${classId}&tab=students`);
+  redirect(`/school-class?class_id=${classId}&tab=students&toast=Student+added`);
 }
 
 async function removeStudentAction(formData: FormData) {
@@ -96,7 +96,7 @@ async function removeStudentAction(formData: FormData) {
   if (!classCheck) redirect("/school-classes");
 
   await run("DELETE FROM class_students WHERE class_id=? AND user_id=?", [classId, userId]);
-  redirect(`/school-class?class_id=${classId}&tab=students`);
+  redirect(`/school-class?class_id=${classId}&tab=students&toast=Student+removed`);
 }
 
 async function enrolCourseAction(formData: FormData) {
@@ -130,7 +130,7 @@ async function enrolCourseAction(formData: FormData) {
       );
     }
   }
-  redirect(`/school-class?class_id=${classId}&tab=courses`);
+  redirect(`/school-class?class_id=${classId}&tab=courses&toast=Course+added`);
 }
 
 async function unenrolCourseAction(formData: FormData) {
@@ -155,7 +155,7 @@ async function unenrolCourseAction(formData: FormData) {
   for (const cs of classStudents) {
     await run("DELETE FROM enrollments WHERE course_id=? AND user_id=?", [courseId, cs.user_id]);
   }
-  redirect(`/school-class?class_id=${classId}&tab=courses`);
+  redirect(`/school-class?class_id=${classId}&tab=courses&toast=Course+removed`);
 }
 
 // ============================================================

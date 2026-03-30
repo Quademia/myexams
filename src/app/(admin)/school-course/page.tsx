@@ -39,7 +39,7 @@ async function updateCourseAction(formData: FormData) {
     "UPDATE courses SET title=?, status=?, updated_at=? WHERE id=? AND tenant_id=?",
     [title, status, new Date().toISOString(), courseId, active.tenant_id]
   );
-  redirect(`/school-course?course_id=${courseId}&tab=details`);
+  redirect(`/school-course?course_id=${courseId}&tab=details&toast=Course+updated`);
 }
 
 async function assignTeacherAction(formData: FormData) {
@@ -69,7 +69,7 @@ async function assignTeacherAction(formData: FormData) {
     // #13 — Include created_at (matches old code).
     await run("INSERT INTO course_teachers (course_id, user_id, created_at) VALUES (?,?,?)", [courseId, userId, new Date().toISOString()]);
   }
-  redirect(`/school-course?course_id=${courseId}&tab=teachers`);
+  redirect(`/school-course?course_id=${courseId}&tab=teachers&toast=Teacher+assigned`);
 }
 
 async function unassignTeacherAction(formData: FormData) {
@@ -82,7 +82,7 @@ async function unassignTeacherAction(formData: FormData) {
   const userId = formData.get("user_id") as string;
   const { run } = getDb();
   await run("DELETE FROM course_teachers WHERE course_id=? AND user_id=?", [courseId, userId]);
-  redirect(`/school-course?course_id=${courseId}&tab=teachers`);
+  redirect(`/school-course?course_id=${courseId}&tab=teachers&toast=Teacher+removed`);
 }
 
 async function enrolStudentAction(formData: FormData) {
@@ -115,7 +115,7 @@ async function enrolStudentAction(formData: FormData) {
       [crypto.randomUUID(), courseId, userId, active.tenant_id, now, now]
     );
   }
-  redirect(`/school-course?course_id=${courseId}&tab=students`);
+  redirect(`/school-course?course_id=${courseId}&tab=students&toast=Student+enrolled`);
 }
 
 async function unenrolStudentAction(formData: FormData) {
@@ -128,7 +128,7 @@ async function unenrolStudentAction(formData: FormData) {
   const userId = formData.get("user_id") as string;
   const { run } = getDb();
   await run("DELETE FROM enrollments WHERE course_id=? AND user_id=?", [courseId, userId]);
-  redirect(`/school-course?course_id=${courseId}&tab=students`);
+  redirect(`/school-course?course_id=${courseId}&tab=students&toast=Student+removed`);
 }
 
 async function enrolClassAction(formData: FormData) {
@@ -171,7 +171,7 @@ async function enrolClassAction(formData: FormData) {
     }
   }
 
-  redirect(`/school-course?course_id=${courseId}&tab=classes`);
+  redirect(`/school-course?course_id=${courseId}&tab=classes&toast=Class+enrolled`);
 }
 
 async function unenrolClassAction(formData: FormData) {
@@ -197,7 +197,7 @@ async function unenrolClassAction(formData: FormData) {
     await run("DELETE FROM enrollments WHERE course_id=? AND user_id=?", [courseId, cs.user_id]);
   }
 
-  redirect(`/school-course?course_id=${courseId}&tab=classes`);
+  redirect(`/school-course?course_id=${courseId}&tab=classes&toast=Class+removed`);
 }
 
 async function createCodeAction(formData: FormData) {
@@ -247,7 +247,7 @@ async function createCodeAction(formData: FormData) {
     sameSite: "lax",
     maxAge: 60,
   });
-  redirect(`/school-course?course_id=${courseId}&tab=join-codes`);
+  redirect(`/school-course?course_id=${courseId}&tab=join-codes&toast=Join+code+created`);
 }
 
 async function revokeCodeAction(formData: FormData) {
@@ -261,7 +261,7 @@ async function revokeCodeAction(formData: FormData) {
   const { run } = getDb();
   await run("UPDATE join_codes SET revoked=1, updated_at=? WHERE id=? AND tenant_id=?",
     [new Date().toISOString(), codeId, active.tenant_id]);
-  redirect(`/school-course?course_id=${courseId}&tab=join-codes`);
+  redirect(`/school-course?course_id=${courseId}&tab=join-codes&toast=Join+code+revoked`);
 }
 
 // ============================================================

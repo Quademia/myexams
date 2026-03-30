@@ -111,7 +111,7 @@ async function saveSettingsAction(formData: FormData) {
     }
   }
 
-  redirect(`/exam-builder?exam_id=${examId}&tab=settings`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=settings&toast=Settings+saved`);
 }
 
 
@@ -147,7 +147,7 @@ async function publishAction(formData: FormData) {
     `UPDATE exams SET status='PUBLISHED', published_at=?, published_by=?, updated_at=?${releaseOnPublish ? ", results_published_at=?" : ""} WHERE id=?`,
     releaseOnPublish ? [now, auth.user!.id, now, now, examId] : [now, auth.user!.id, now, examId]
   );
-  redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=publish&toast=Exam+published`);
 }
 
 async function closeAction(formData: FormData) {
@@ -175,7 +175,7 @@ async function closeAction(formData: FormData) {
     `UPDATE exams SET status='CLOSED', closed_at=?, updated_at=?${releaseOnClose ? ", results_published_at=?" : ""} WHERE id=?`,
     releaseOnClose ? [now, now, now, examId] : [now, now, examId]
   );
-  redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=publish&toast=Exam+closed`);
 }
 
 async function releaseResultsAction(formData: FormData) {
@@ -195,7 +195,7 @@ async function releaseResultsAction(formData: FormData) {
 
   await run("UPDATE exams SET results_published_at=?, updated_at=? WHERE id=? AND tenant_id=?",
     [new Date().toISOString(), new Date().toISOString(), examId, active!.tenant_id]);
-  redirect(`/exam-builder?exam_id=${examId}&tab=publish`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=publish&toast=Results+released+to+students`);
 }
 
 async function addAccessClassAction(formData: FormData) {
@@ -223,7 +223,7 @@ async function addAccessClassAction(formData: FormData) {
     await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
       [crypto.randomUUID(), examId, s.user_id, auth.user!.id, now]);
   }
-  redirect(`/exam-builder?exam_id=${examId}&tab=access`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=access&toast=Class+access+granted`);
 }
 
 async function addAccessCourseAction(formData: FormData) {
@@ -248,7 +248,7 @@ async function addAccessCourseAction(formData: FormData) {
     await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
       [crypto.randomUUID(), examId, s.user_id, auth.user!.id, now]);
   }
-  redirect(`/exam-builder?exam_id=${examId}&tab=access`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=access&toast=Course+access+granted`);
 }
 
 async function addAccessStudentAction(formData: FormData) {
@@ -274,7 +274,7 @@ async function addAccessStudentAction(formData: FormData) {
     await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
       [crypto.randomUUID(), examId, userId, auth.user!.id, now]);
   }
-  redirect(`/exam-builder?exam_id=${examId}&tab=access`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=access&toast=Student+access+granted`);
 }
 
 async function removeAccessAction(formData: FormData) {
@@ -292,7 +292,7 @@ async function removeAccessAction(formData: FormData) {
   if (exam?.status === "CLOSED") redirect(`/exam-builder?exam_id=${examId}&tab=access`);
 
   await run("DELETE FROM exam_access WHERE id=? AND exam_id=?", [accessId, examId]);
-  redirect(`/exam-builder?exam_id=${examId}&tab=access`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=access&toast=Access+removed`);
 }
 
 async function gateSubmitAction(formData: FormData) {
@@ -331,7 +331,7 @@ async function gateSubmitAction(formData: FormData) {
     }
   }
 
-  redirect(`/exam-builder?exam_id=${examId}&tab=approvals`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=approvals&toast=Submitted+for+approval`);
 }
 
 // ============================================================
@@ -388,7 +388,7 @@ async function addQuestionAction(formData: FormData) {
   // Insert options.
   await saveQuestionOptions(qId, qType, formData, now);
 
-  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions&toast=Question+added`);
 }
 
 async function updateQuestionAction(formData: FormData) {
@@ -442,7 +442,7 @@ async function updateQuestionAction(formData: FormData) {
   await run("DELETE FROM exam_question_options WHERE question_id=?", [questionId]);
   await saveQuestionOptions(questionId, qType, formData, now);
 
-  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions&toast=Question+updated`);
 }
 
 async function deleteQuestionAction(formData: FormData) {
@@ -475,7 +475,7 @@ async function deleteQuestionAction(formData: FormData) {
     await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [i + 1, remaining[i].id]);
   }
 
-  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions&toast=Question+deleted`);
 }
 
 async function reorderQuestionAction(formData: FormData) {

@@ -79,7 +79,7 @@ async function respondWithCommentsAction(formData: FormData) {
   await run("UPDATE sitting_approval_responses SET status=?, note=?, updated_at=? WHERE id=?",
     [response, note, now, pendingResp.id]);
 
-  redirect("/approvals");
+  redirect("/approvals?toast=Response+submitted");
 }
 
 // ============================================================

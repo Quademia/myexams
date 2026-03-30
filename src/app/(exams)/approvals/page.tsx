@@ -48,7 +48,11 @@ async function respondAction(formData: FormData) {
     );
   }
 
-  redirect("/approvals");
+  if (response === "APPROVED") {
+    redirect("/approvals?toast=Approved");
+  } else {
+    redirect("/approvals?toast=Rejected&toast_type=error");
+  }
 }
 
 const gateLabel = (t: string) => {

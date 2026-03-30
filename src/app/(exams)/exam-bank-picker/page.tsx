@@ -102,7 +102,7 @@ async function addBankQuestionToExamAction(formData: FormData) {
   }
 
   // Return the teacher to the exam builder's questions tab.
-  redirect(`/exam-builder?exam_id=${examId}&tab=questions`);
+  redirect(`/exam-builder?exam_id=${examId}&tab=questions&toast=Question+added+to+exam`);
 }
 
 // Helper labels.

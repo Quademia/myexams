@@ -36,7 +36,7 @@ async function saveSettingsAction(formData: FormData) {
      WHERE id=? AND tenant_id=?`,
     [title, description, academicYear, status, new Date().toISOString(), sittingId, active.tenant_id]
   );
-  redirect(`/sitting-builder?sitting_id=${sittingId}&tab=settings`);
+  redirect(`/sitting-builder?sitting_id=${sittingId}&tab=settings&toast=Settings+saved`);
 }
 
 async function addExistingPaperAction(formData: FormData) {
@@ -66,7 +66,7 @@ async function addExistingPaperAction(formData: FormData) {
       [crypto.randomUUID(), sittingId, examId, sortOrder, now]
     );
   }
-  redirect(`/sitting-builder?sitting_id=${sittingId}&tab=papers`);
+  redirect(`/sitting-builder?sitting_id=${sittingId}&tab=papers&toast=Paper+added`);
 }
 
 async function createPaperAction(formData: FormData) {
@@ -125,7 +125,7 @@ async function createPaperAction(formData: FormData) {
     [crypto.randomUUID(), sittingId, examId, sortOrder, now]
   );
 
-  redirect(`/sitting-builder?sitting_id=${sittingId}&tab=papers`);
+  redirect(`/sitting-builder?sitting_id=${sittingId}&tab=papers&toast=Paper+created`);
 }
 
 async function removePaperAction(formData: FormData) {
@@ -138,7 +138,7 @@ async function removePaperAction(formData: FormData) {
   const paperId = formData.get("paper_id") as string;
   const { run } = getDb();
   await run("DELETE FROM exam_sitting_papers WHERE id=? AND sitting_id=?", [paperId, sittingId]);
-  redirect(`/sitting-builder?sitting_id=${sittingId}&tab=papers`);
+  redirect(`/sitting-builder?sitting_id=${sittingId}&tab=papers&toast=Paper+removed`);
 }
 
 // ============================================================
