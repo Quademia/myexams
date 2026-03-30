@@ -56,7 +56,7 @@ Currently changing a filter (role, status, course) causes a full page reload. Wi
 Currently teachers click up/down arrows to reorder questions — each click causes a full page reload. Drag and drop would make the exam builder feel fluid and professional.
 
 ### Confirm Dialogs
-Currently destructive actions (delete question, remove student, revoke code) happen immediately with no confirmation. A `ConfirmButton` client component would add a safety step without a page reload.
+✅ Done 2026-03-30 — `ConfirmButton` component built and wired to 21 destructive/consequential actions across 8 files. Modal confirmation with danger (red) and warning (amber) variants. Covers deletes, removes, revokes, publish, close, release results, and disable gate.
 
 ### Inline Editing
 Forms that expand inline rather than navigating to a separate edit page. Particularly useful in the exam builder and sitting builder.
@@ -100,7 +100,7 @@ These are not rigid phases — they will shift based on what matters most at the
 
 1. **NextAuth/Auth.js integration** — replace current custom auth with NextAuth. Gives password reset, email verification, Google SSO, Microsoft SSO, rate limiting, and session management in one piece of work. Data stays in D1. This is the foundation everything else builds on.
 2. ~~**Toast notifications** — one component, fixes every page, lowest effort~~ ✅ Done 2026-03-30
-3. **Confirm dialogs** — one component, fixes every destructive action
+3. ~~**Confirm dialogs** — one component, fixes every destructive action~~ ✅ Done 2026-03-30
 4. **Design in Figma first** — toast and drawer components designed before building
 5. **StudentDrawer and TeacherDrawer** — largest UX leap, built after Figma designs approved
 6. **Teacher single context experience** — design in Figma first, then build
@@ -169,14 +169,14 @@ A critical analysis of every page and feature in the app, mapped against the new
 
 **Toast notifications** ✅ Done 2026-03-30 — `ToastProvider` in root layout, wired to all 58 server action redirects across 18 files. Success (green), error (red), info (teal). Auto-dismiss 4 seconds.
 
-**Confirm dialogs** affect every destructive action across 15+ pages. Currently everything deletes and removes immediately with no warning. One `ConfirmButton` component fixes all of them.
+**Confirm dialogs** ✅ Done 2026-03-30 — `ConfirmButton` wired to 21 destructive/consequential actions across 8 files. Danger (red) and warning (amber) variants. Self-removal guard preserved on school-people page.
 
 **StudentDrawer** appears on 7 different pages. Build it once and it transforms the experience on People, Course detail, Class detail, Results, Sitting builder results, and Exam access.
 
 **Recommended build sequence based on impact vs effort:**
 
 1. ~~Toast notifications — one component, fixes every page, lowest effort~~ ✅ Done 2026-03-30 — wired to all 58 server actions across 18 files
-2. Confirm dialogs — one component, fixes every destructive action, low effort
+2. ~~Confirm dialogs — one component, fixes every destructive action, low effort~~ ✅ Done 2026-03-30 — wired to 21 actions across 8 files
 3. StudentDrawer — larger build, highest single-component impact
 4. TeacherDrawer — natural follow-on to StudentDrawer
 5. Inline expanding rows — targeted additions per page after drawers exist

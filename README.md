@@ -325,7 +325,7 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - ~~Fix `/join` page — old custom session behavior and unsafe account reuse on create-account path~~ ✅ Done 2026-03-29 (`signIn`-based flow with existing-email guard)
 
 ### Deferred Phase 2
-- Confirm dialogs on destructive actions — needs client-side `ConfirmButton` component
+- ~~Confirm dialogs on destructive actions — `ConfirmButton` component built and wired to 21 actions~~ ✅ Done 2026-03-30
 - Sequential question navigation in exam preview
 - 💬 badge on Results pane where grading gate comments exist
 - Approver overall note in Approvals pane
@@ -336,6 +336,8 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - ~~Set session and idle timeout to production values (4hr JWT, 28min idle, 2min warning countdown)~~ ✅ Done 2026-03-30
 - ~~Toast notification component built (`src/components/ui/Toast.tsx`) — reads `?toast=` and `?toast_type=` from URL, auto-dismisses after 4 seconds, three types: success/error/info, added to root layout~~ ✅ Done 2026-03-30
 - ~~Toast messages wired to all 58 server actions across 18 files~~ ✅ Done 2026-03-30
+- ~~ConfirmButton client component built (`src/components/ui/ConfirmButton.tsx`) — modal confirmation with danger/warning variants, programmatic form submit via useRef~~ ✅ Done 2026-03-30
+- ~~ConfirmButton wired to 21 destructive/consequential actions across 8 files — includes deletes, removes, revokes, publish, close, release results, disable gate. Self-removal guard preserved on school-people page.~~ ✅ Done 2026-03-30
 
 ### Future
 - Phase 10 — Question Bank bulk CSV import
@@ -349,4 +351,4 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 ---
 
-*Last updated: 2026-03-30 — Production timing values set, toast notifications built and wired to all 58 server actions.*
+*Last updated: 2026-03-30 — Production timing values, toast notifications (58 actions), confirm dialogs (21 actions).*
