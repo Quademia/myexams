@@ -99,7 +99,7 @@ The two things that would make the biggest difference to real users:
 These are not rigid phases — they will shift based on what matters most at the time. But this is the current thinking on order:
 
 1. **NextAuth/Auth.js integration** — replace current custom auth with NextAuth. Gives password reset, email verification, Google SSO, Microsoft SSO, rate limiting, and session management in one piece of work. Data stays in D1. This is the foundation everything else builds on.
-2. **Toast notifications** — one component, fixes every page, lowest effort
+2. ~~**Toast notifications** — one component, fixes every page, lowest effort~~ ✅ Done 2026-03-30
 3. **Confirm dialogs** — one component, fixes every destructive action
 4. **Design in Figma first** — toast and drawer components designed before building
 5. **StudentDrawer and TeacherDrawer** — largest UX leap, built after Figma designs approved
@@ -167,7 +167,7 @@ A critical analysis of every page and feature in the app, mapped against the new
 
 ## Key Patterns From The Analysis
 
-**Toast notifications** affect almost every single page. The easiest win on the entire list. One `Toast` component built once, used everywhere. Currently the platform is completely silent after every action.
+**Toast notifications** ✅ Done 2026-03-30 — `ToastProvider` in root layout, wired to all 58 server action redirects across 18 files. Success (green), error (red), info (teal). Auto-dismiss 4 seconds.
 
 **Confirm dialogs** affect every destructive action across 15+ pages. Currently everything deletes and removes immediately with no warning. One `ConfirmButton` component fixes all of them.
 
@@ -175,7 +175,7 @@ A critical analysis of every page and feature in the app, mapped against the new
 
 **Recommended build sequence based on impact vs effort:**
 
-1. Toast notifications — one component, fixes every page, lowest effort
+1. ~~Toast notifications — one component, fixes every page, lowest effort~~ ✅ Done 2026-03-30 — wired to all 58 server actions across 18 files
 2. Confirm dialogs — one component, fixes every destructive action, low effort
 3. StudentDrawer — larger build, highest single-component impact
 4. TeacherDrawer — natural follow-on to StudentDrawer

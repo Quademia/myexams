@@ -388,7 +388,7 @@ There is no certificate or downloadable result document — students can view re
 
 There is no confirmation dialog on destructive actions — clicking Remove, Delete, or Revoke takes effect immediately with no warning or undo option.
 
-The platform gives no visible feedback after most actions — there is no success message after saving settings, adding a person, or completing a grading session. The page simply reloads.
+The platform shows a toast notification after every action — saving settings, adding a person, grading, approving, revoking codes, and more. Messages appear bottom-right, auto-dismiss after 4 seconds, and use colour-coded types: green for success, red for errors.
 
 There is no drag-and-drop for reordering questions — teachers must use up and down arrow buttons, each of which causes a full page reload.
 

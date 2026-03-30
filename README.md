@@ -332,16 +332,21 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - Remove `/setup` link from login page before real production launch
 - System admin accessing exam builder without active school — needs clean fix
 
+### Immediate — Prompt 5
+- ~~Set session and idle timeout to production values (4hr JWT, 28min idle, 2min warning countdown)~~ ✅ Done 2026-03-30
+- ~~Toast notification component built (`src/components/ui/Toast.tsx`) — reads `?toast=` and `?toast_type=` from URL, auto-dismisses after 4 seconds, three types: success/error/info, added to root layout~~ ✅ Done 2026-03-30
+- ~~Toast messages wired to all 58 server actions across 18 files~~ ✅ Done 2026-03-30
+
 ### Future
 - Phase 10 — Question Bank bulk CSV import
 - Phase 11 — UI/design polish sprint + PWA installability
 - ~~NextAuth type declarations — extend properly via `next-auth.d.ts`~~ ✅ Done 2026-03-29 (session.user.id, active_tenant_id, session_token)
 - Microsoft SSO for organisational accounts — requires publisher verification in Azure
-- Toast notifications
+- ~~Toast notifications~~ ✅ Done 2026-03-30
 - StudentDrawer and TeacherDrawer components
 - Aggregate reporting
 - Self-service school signup
 
 ---
 
-*Last updated: 2026-03-29 — Session & security hardening complete and verified (rate limiting, session tracking, idle timeout, cross-tab sync, session revocation on password reset).*
+*Last updated: 2026-03-30 — Production timing values set, toast notifications built and wired to all 58 server actions.*
