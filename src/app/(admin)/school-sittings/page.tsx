@@ -3,7 +3,7 @@
 // Links to the sitting builder for each one. Also has a "New Sitting" button.
 
 import { redirect } from "next/navigation";
-import { requireAuth, pickActiveMembership } from "@/lib/auth";
+import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { SchoolLayout } from "@/components/layout/SchoolLayout";
 import { Card } from "@/components/ui/Card";
@@ -48,9 +48,9 @@ export default async function SchoolSittingsPage() {
 
   const sittings = await all<{
     id: string; title: string; academic_year: string | null;
-    status: string; paper_count: number;
+    status: string; paper_count: number; created_at: string;
   }>(
-    `SELECT es.id, es.title, es.academic_year, es.status,
+    `SELECT es.id, es.title, es.academic_year, es.status, es.created_at,
        (SELECT COUNT(*) FROM exam_sitting_papers esp WHERE esp.sitting_id = es.id) AS paper_count
      FROM exam_sittings es
      WHERE es.tenant_id=? ORDER BY es.created_at DESC`,
@@ -62,16 +62,11 @@ export default async function SchoolSittingsPage() {
       <Card>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold">Exam Sittings</h2>
-          <div className="flex gap-2">
-            <a href="/sittings" className="px-3 py-2 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 no-underline">
-              Manage Sittings
-            </a>
-            <form action={createSittingAction}>
-              <button type="submit" className="px-3 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
-                + New Sitting
-              </button>
-            </form>
-          </div>
+          <form action={createSittingAction}>
+            <button type="submit" className="px-3 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+              + New Sitting
+            </button>
+          </form>
         </div>
 
         {sittings.length === 0 ? (
@@ -87,6 +82,7 @@ export default async function SchoolSittingsPage() {
                   <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Academic Year</th>
                   <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Status</th>
                   <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Papers</th>
+                  <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Created</th>
                   <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2"></th>
                 </tr>
               </thead>
@@ -97,6 +93,7 @@ export default async function SchoolSittingsPage() {
                     <td className="py-3 px-2 text-gray-500 text-sm">{s.academic_year || "—"}</td>
                     <td className="py-3 px-2"><StatusBadge status={s.status} /></td>
                     <td className="py-3 px-2 text-gray-600">{s.paper_count}</td>
+                    <td className="py-3 px-2 text-gray-500 text-sm">{fmtISO(s.created_at)}</td>
                     <td className="py-3 px-2">
                       <a href={`/sitting-builder?sitting_id=${s.id}`} className="px-3 py-1 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 no-underline">
                         Open

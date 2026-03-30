@@ -24,7 +24,7 @@ async function saveSettingsAction(formData: FormData) {
 
   const sittingId = formData.get("sitting_id") as string;
   const title = (formData.get("title") as string || "").trim();
-  if (!sittingId || !title) redirect("/sittings");
+  if (!sittingId || !title) redirect("/school-sittings");
 
   const description = (formData.get("description") as string || "").trim() || null;
   const academicYear = (formData.get("academic_year") as string || "").trim() || null;
@@ -48,7 +48,7 @@ async function addExistingPaperAction(formData: FormData) {
 
   const sittingId = formData.get("sitting_id") as string;
   const examId = (formData.get("exam_id") as string || "").trim();
-  if (!sittingId || !examId) redirect("/sittings");
+  if (!sittingId || !examId) redirect("/school-sittings");
 
   const { first, run } = getDb();
   const now = new Date().toISOString();
@@ -171,7 +171,7 @@ export default async function SittingBuilderPage({
   const params = await searchParams;
   const sittingId = params.sitting_id;
   const tab = params.tab || "settings";
-  if (!sittingId) redirect("/sittings");
+  if (!sittingId) redirect("/school-sittings");
 
   const { first } = getDb();
   const sitting = await first<{
@@ -179,7 +179,7 @@ export default async function SittingBuilderPage({
     academic_year: string | null; status: string;
   }>("SELECT id, title, description, academic_year, status FROM exam_sittings WHERE id=? AND tenant_id=?",
     [sittingId, active.tenant_id]);
-  if (!sitting) redirect("/sittings");
+  if (!sitting) redirect("/school-sittings");
 
   const base = `/sitting-builder?sitting_id=${sittingId}`;
   const tabs = [
@@ -194,7 +194,7 @@ export default async function SittingBuilderPage({
       <Card>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <a href="/sittings" className="text-sm text-gray-400 hover:underline">← Sittings</a>
+            <a href="/school-sittings" className="text-sm text-gray-400 hover:underline">← Sittings</a>
             <h1 className="text-lg font-bold mt-1">{sitting.title}</h1>
             <div className="flex gap-2 mt-1">
               <StatusBadge status={sitting.status} />
@@ -204,7 +204,7 @@ export default async function SittingBuilderPage({
             </div>
           </div>
           <div className="flex gap-3 text-sm">
-            <a href="/sittings" className="text-teal-700 hover:underline">All Sittings</a>
+            <a href="/school-sittings" className="text-teal-700 hover:underline">All Sittings</a>
             <a href="/school" className="text-teal-700 hover:underline">School Admin</a>
           </div>
         </div>

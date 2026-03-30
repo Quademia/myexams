@@ -248,7 +248,7 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 | Route | Description | Status |
 |---|---|---|
-| `/sittings` | Sittings management | ✅ Verified |
+| `/school-sittings` | Sittings management | ✅ Verified |
 | `/sitting-builder` | 3 tabs: Settings, Papers, Results | ✅ Verified |
 | `/sitting-gate-settings` | Assign approvers to gates | ✅ Verified |
 | `/sitting-results` | Student results across a sitting | ✅ Verified |

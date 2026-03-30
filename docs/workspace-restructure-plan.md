@@ -75,8 +75,8 @@ These are built once and used by all workspaces.
 
 ## Phase 1 — Pre-work (clean up before building)
 
-- [ ] Merge /school-sittings and /sittings into one unified route
-      (two pages doing the same thing — must be resolved before workspace build)
+- [x] Merge /school-sittings and /sittings into one unified route
+      (completed 2026-03-30 — /sittings deleted, /school-sittings is now the single sittings page)
 - [ ] Decide profile page approach
       (decision made: becomes a drawer accessible from every workspace header)
 

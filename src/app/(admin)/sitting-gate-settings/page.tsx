@@ -25,7 +25,7 @@ async function addApproverAction(formData: FormData) {
   const userId = formData.get("user_id") as string;
 
   if (!sittingId || !examId || !["QUESTIONS", "GRADING", "RESULTS"].includes(gateType) || !userId) {
-    redirect("/sittings");
+    redirect("/school-sittings");
   }
 
   const { first, run } = getDb();
@@ -33,7 +33,7 @@ async function addApproverAction(formData: FormData) {
 
   // Verify sitting belongs to tenant.
   const sitting = await first("SELECT id FROM exam_sittings WHERE id=? AND tenant_id=?", [sittingId, active.tenant_id]);
-  if (!sitting) redirect("/sittings");
+  if (!sitting) redirect("/school-sittings");
 
   // Verify user is active member.
   const member = await first("SELECT id FROM memberships WHERE user_id=? AND tenant_id=? AND status='ACTIVE'", [userId, active.tenant_id]);
@@ -66,7 +66,7 @@ async function disableGateAction(formData: FormData) {
   const gateType = formData.get("gate_type") as string;
 
   if (!sittingId || !examId || !["QUESTIONS", "GRADING", "RESULTS"].includes(gateType)) {
-    redirect("/sittings");
+    redirect("/school-sittings");
   }
 
   const { run } = getDb();
@@ -134,14 +134,14 @@ export default async function SittingGateSettingsPage({
   const params = await searchParams;
   const sittingId = params.sitting_id;
   const examId = params.exam_id;
-  if (!sittingId || !examId) redirect("/sittings");
+  if (!sittingId || !examId) redirect("/school-sittings");
 
   const { first, all } = getDb();
 
   const sitting = await first<{ id: string; title: string }>(
     "SELECT id, title FROM exam_sittings WHERE id=? AND tenant_id=?", [sittingId, active.tenant_id]
   );
-  if (!sitting) redirect("/sittings");
+  if (!sitting) redirect("/school-sittings");
 
   const paper = await first<{
     exam_id: string; exam_title: string; course_title: string; teacher_name: string | null;
