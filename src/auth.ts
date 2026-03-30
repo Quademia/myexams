@@ -58,7 +58,7 @@ export const { handlers, signIn, signOut, auth, unstable_update } = NextAuth(asy
   // Single source of truth for session lifetime — used by both NextAuth's
   // JWT maxAge and our D1 session row absolute_expires_at. Change this one
   // constant and both stay in sync. (30 min for testing — production: 4 * 60 * 60)
-  const SESSION_MAX_AGE_SECS = 30 * 60;
+  const SESSION_MAX_AGE_SECS = 4 * 60 * 60; // 4 hours — production value
 
   // Bridge between signIn and jwt callbacks — signIn has access to request
   // headers (IP, User-Agent) but doesn't create the session row. jwt creates

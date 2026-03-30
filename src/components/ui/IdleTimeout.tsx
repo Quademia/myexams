@@ -29,8 +29,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // For testing: short timers. For production, change these:
 //   IDLE_TIMEOUT_MS = 28 * 60 * 1000  (28 minutes)
 //   WARNING_SECONDS = 120              (2 minutes)
-const IDLE_TIMEOUT_MS = 2 * 60 * 1000;  // 2 minutes idle before warning
-const WARNING_SECONDS = 30;              // 30 second countdown in warning modal
+const IDLE_TIMEOUT_MS = 28 * 60 * 1000;  // 28 minutes idle before warning
+const WARNING_SECONDS = 120;             // 2 minute countdown in warning modal
 
 // --- Activity events to listen for ---
 const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
