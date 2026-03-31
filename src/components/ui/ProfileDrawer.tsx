@@ -105,6 +105,14 @@ export function ProfileDrawer({
             ))}
           </div>
         )}
+        {memberships.length > 1 && (
+          <a
+            href="/choose-school"
+            className="inline-block mt-3 text-sm text-teal-700 hover:underline"
+          >
+            Switch school
+          </a>
+        )}
       </div>
 
       <hr className="border-gray-100 my-5" />
