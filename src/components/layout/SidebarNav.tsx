@@ -6,6 +6,7 @@
 // and mobile sidebar toggle (hamburger open/close).
 
 import { useState } from "react";
+import { ProfileDrawer } from "@/components/ui/ProfileDrawer";
 
 export type NavItem = {
   label: string;
@@ -18,12 +19,19 @@ export type NavItem = {
   dividerLabel?: string;
 };
 
+export interface ProfileProps {
+  user: { id: string; name: string; email: string; is_system_admin: number };
+  memberships: { tenant_id: string; tenant_name: string; role: string; status: string }[];
+  changePasswordAction: (formData: FormData) => Promise<void>;
+}
+
 interface SidebarNavProps {
   items: NavItem[];
   schoolName?: string;
   roleName?: string;
   currentPath: string;
   switchSchool?: boolean;
+  profile?: ProfileProps;
 }
 
 function NavContent({
@@ -32,8 +40,10 @@ function NavContent({
   roleName,
   currentPath,
   switchSchool,
+  profile,
   onNavigate,
-}: SidebarNavProps & { onNavigate?: () => void }) {
+  onProfileClick,
+}: SidebarNavProps & { onNavigate?: () => void; onProfileClick?: () => void }) {
   return (
     <>
       {/* Top section — branding */}
@@ -118,13 +128,23 @@ function NavContent({
             Switch school
           </a>
         )}
-        <a
-          href="/profile"
-          onClick={onNavigate}
-          className="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 no-underline"
-        >
-          Profile
-        </a>
+        {onProfileClick ? (
+          <button
+            type="button"
+            onClick={() => { onProfileClick(); onNavigate?.(); }}
+            className="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 text-left"
+          >
+            Profile
+          </button>
+        ) : (
+          <a
+            href="/profile"
+            onClick={onNavigate}
+            className="text-sm text-gray-500 hover:text-gray-700 px-2 py-1 no-underline"
+          >
+            Profile
+          </a>
+        )}
         <a
           href="/logout"
           onClick={onNavigate}
@@ -139,12 +159,13 @@ function NavContent({
 
 export function SidebarNav(props: SidebarNavProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   return (
     <>
       {/* Desktop sidebar content — rendered inside WorkspaceShell's aside */}
       <div className="hidden md:flex flex-col h-full">
-        <NavContent {...props} />
+        <NavContent {...props} onProfileClick={props.profile ? () => setProfileOpen(true) : undefined} />
       </div>
 
       {/* Mobile hamburger button — fixed, top-left, only on mobile */}
@@ -167,9 +188,20 @@ export function SidebarNav(props: SidebarNavProps) {
           />
           {/* Sidebar panel */}
           <div className="absolute left-0 top-0 h-full w-64 bg-white shadow-xl z-50 flex flex-col">
-            <NavContent {...props} onNavigate={() => setIsOpen(false)} />
+            <NavContent {...props} onNavigate={() => setIsOpen(false)} onProfileClick={props.profile ? () => setProfileOpen(true) : undefined} />
           </div>
         </div>
+      )}
+
+      {/* Profile drawer — rendered when profile props are provided */}
+      {props.profile && (
+        <ProfileDrawer
+          open={profileOpen}
+          onClose={() => setProfileOpen(false)}
+          user={props.profile.user}
+          memberships={props.profile.memberships}
+          changePasswordAction={props.profile.changePasswordAction}
+        />
       )}
     </>
   );

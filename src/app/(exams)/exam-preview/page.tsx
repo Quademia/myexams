@@ -17,6 +17,7 @@ import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { SidebarNav } from "@/components/layout/SidebarNav";
 import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
 import { getTeacherNavItems } from "@/lib/teacher-nav";
+import { changePasswordAction } from "@/lib/change-password";
 
 // ============================================================
 // Server Action: Respond to gate with per-question comments
@@ -390,6 +391,11 @@ export default async function ExamPreviewPage({
             roleName="Teacher"
             currentPath="/exam-preview"
             switchSchool={auth.memberships.length > 1}
+            profile={{
+              user: { id: auth.user!.id, name: auth.user!.name, email: auth.user!.email, is_system_admin: auth.user!.is_system_admin },
+              memberships: auth.memberships.map(m => ({ tenant_id: m.tenant_id, tenant_name: m.tenant_name, role: m.role, status: "ACTIVE" })),
+              changePasswordAction,
+            }}
           />
         }
         header={

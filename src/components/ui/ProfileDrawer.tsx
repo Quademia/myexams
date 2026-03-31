@@ -4,7 +4,7 @@
 // Renders the user's own profile inside a DrawerShell.
 // Replaces the standalone /profile page for users inside a workspace.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DrawerShell } from "@/components/ui/DrawerShell";
 
 interface ProfileUser {
@@ -113,6 +113,7 @@ export function ProfileDrawer({
       <div>
         <h3 className="text-sm font-semibold text-gray-700 mb-3">Change password</h3>
         <form action={changePasswordAction}>
+          <input type="hidden" name="return_to" value={typeof window !== "undefined" ? window.location.pathname : "/profile"} />
           <label className="block text-sm text-gray-600 mb-1">Current password</label>
           <input
             type="password"
