@@ -12,6 +12,29 @@ import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
 import { SidebarNav } from "@/components/layout/SidebarNav";
 import { getAdminNavItems } from "@/lib/admin-nav";
 import { changePasswordAction } from "@/lib/change-password";
+import { CourseDetail } from "@/components/admin/CourseDetail";
+
+// ============================================================
+// Server Actions
+// ============================================================
+
+async function createCourseAction(formData: FormData) {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
+
+  const title = (formData.get("title") as string || "").trim();
+  if (!title) redirect("/school?section=courses");
+
+  const { run } = getDb();
+  const now = new Date().toISOString();
+  await run(
+    "INSERT INTO courses (id, tenant_id, title, status, created_at, updated_at) VALUES (?,?,?,'ACTIVE',?,?)",
+    [crypto.randomUUID(), active.tenant_id, title, now, now]
+  );
+  redirect("/school?section=courses&toast=Course+created");
+}
 
 // ============================================================
 // Small UI helpers
@@ -98,6 +121,76 @@ async function OverviewSection({ tenantId, userId }: { tenantId: string; userId:
 }
 
 // ============================================================
+// Section: Courses list
+// ============================================================
+
+async function CoursesSection({ tenantId }: { tenantId: string }) {
+  const { all } = getDb();
+  const courses = await all<{
+    id: string; title: string; status: string; teacher_count: number; student_count: number;
+  }>(
+    `SELECT c.id, c.title, c.status,
+       (SELECT COUNT(*) FROM course_teachers ct WHERE ct.course_id = c.id) AS teacher_count,
+       (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.id) AS student_count
+     FROM courses c WHERE c.tenant_id = ? ORDER BY c.title ASC`,
+    [tenantId]
+  );
+
+  return (
+    <>
+      <Card>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold">Courses</h2>
+        </div>
+        {courses.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4 text-center">No courses yet</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Title</th>
+                  <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Status</th>
+                  <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Teachers</th>
+                  <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Students</th>
+                  <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {courses.map((c) => (
+                  <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-3 px-2 font-medium">
+                      <a href={`/school?section=courses&course_id=${c.id}`} className="text-teal-700 hover:underline">{c.title}</a>
+                    </td>
+                    <td className="py-3 px-2">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${c.status === "ACTIVE" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>{c.status}</span>
+                    </td>
+                    <td className="py-3 px-2 text-gray-600">{c.teacher_count}</td>
+                    <td className="py-3 px-2 text-gray-600">{c.student_count}</td>
+                    <td className="py-3 px-2">
+                      <a href={`/school?section=courses&course_id=${c.id}`} className="text-sm text-teal-700 hover:underline">Manage →</a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <Card title="Create Course">
+        <form action={createCourseAction} className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="block text-sm mb-1">Course title</label>
+            <input name="title" required placeholder="e.g. Medical Nursing" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          </div>
+          <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">Create</button>
+        </form>
+      </Card>
+    </>
+  );
+}
+
+// ============================================================
 // Placeholder for sections not yet migrated
 // ============================================================
 
@@ -147,6 +240,13 @@ export default async function SchoolWorkspacePage({
   const tid = active.tenant_id;
   const userId = auth.user!.id;
 
+  // Course detail params.
+  const courseId = params.course_id || null;
+  const tab = params.tab || "details";
+  const dupWho = params.dup_who || undefined;
+  const dupAuto = params.dup_auto || undefined;
+  const dupMax = params.dup_max || undefined;
+
   // Counts for sidebar badges.
   const { first } = getDb();
   const [pendingApprovalRow, pendingJoinRow] = await Promise.all([
@@ -192,8 +292,11 @@ export default async function SchoolWorkspacePage({
       {/* Overview */}
       {section === "" && <OverviewSection tenantId={tid} userId={userId} />}
 
+      {/* Courses — list or detail */}
+      {section === "courses" && !courseId && <CoursesSection tenantId={tid} />}
+      {section === "courses" && courseId && <CourseDetail courseId={courseId} tab={tab} tenantId={tid} dupWho={dupWho} dupAuto={dupAuto} dupMax={dupMax} />}
+
       {/* Placeholder sections — will be migrated one by one */}
-      {section === "courses" && <SectionPlaceholder title="Courses" oldRoute="/school-courses" />}
       {section === "classes" && <SectionPlaceholder title="Classes" oldRoute="/school-classes" />}
       {section === "people" && <SectionPlaceholder title="People" oldRoute="/school-people" />}
       {section === "join-codes" && <SectionPlaceholder title="Join Codes" oldRoute="/school-join-codes" />}
