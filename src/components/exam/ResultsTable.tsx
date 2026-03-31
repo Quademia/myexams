@@ -36,6 +36,7 @@ interface ResultsTableProps {
   hasGradeBands: boolean;
   examId: string;
   csvUrl: string;
+  returnTo?: string; // passed to /exam-grade so it knows where to redirect back
 }
 
 // ---------- Helpers ----------
@@ -76,7 +77,9 @@ export function ResultsTable({
   hasGradeBands,
   examId,
   csvUrl,
+  returnTo,
 }: ResultsTableProps) {
+  const returnSuffix = returnTo ? `&return_to=${encodeURIComponent(returnTo)}` : "";
   const [filterGrading, setFilterGrading] = useState<"" | "FULLY_GRADED" | "AUTO_GRADED">("");
   const [filterPass, setFilterPass] = useState<"" | "pass" | "fail">("");
   const [sortCol, setSortCol] = useState("name");
@@ -285,14 +288,14 @@ export function ResultsTable({
                   <td className="py-2 px-2">
                     {r.gradingStatus === "AUTO_GRADED" ? (
                       <a
-                        href={`/exam-grade?attempt_id=${r.id}&exam_id=${examId}`}
+                        href={`/exam-grade?attempt_id=${r.id}&exam_id=${examId}${returnSuffix}`}
                         className="px-2 py-1 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 no-underline"
                       >
                         Grade
                       </a>
                     ) : (
                       <a
-                        href={`/exam-grade?attempt_id=${r.id}&exam_id=${examId}&view=1`}
+                        href={`/exam-grade?attempt_id=${r.id}&exam_id=${examId}&view=1${returnSuffix}`}
                         className="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-300 no-underline"
                       >
                         View

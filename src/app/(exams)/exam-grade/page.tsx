@@ -16,6 +16,7 @@ import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { SidebarNav } from "@/components/layout/SidebarNav";
 import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
 import { getTeacherNavItems } from "@/lib/teacher-nav";
+import { getAdminNavItems } from "@/lib/admin-nav";
 import { changePasswordAction } from "@/lib/change-password";
 
 // ============================================================
@@ -29,6 +30,7 @@ async function gradeAction(formData: FormData) {
   if (!active || (active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN")) redirect("/");
 
   const returnPath = (formData.get("return_path") as string) || "/exam-builder";
+  const rpSep = returnPath.includes("?") ? "&" : "?";
   const attemptId = formData.get("attempt_id") as string;
   const examId = formData.get("exam_id") as string;
   if (!attemptId || !examId) redirect(returnPath);
@@ -59,7 +61,7 @@ async function gradeAction(formData: FormData) {
     `SELECT id, grade_bands_json FROM exam_attempts WHERE id=? AND tenant_id=?`,
     [attemptId, active.tenant_id]
   );
-  if (!attempt) redirect(`${returnPath}?exam_id=${examId}&tab=results`);
+  if (!attempt) redirect(`${returnPath}${rpSep}exam_id=${examId}&tab=results`);
 
   const rows = await all<{ score_awarded: number | null; marks: number; question_type: string }>(
     `SELECT a.score_awarded, q.marks, q.question_type
@@ -92,7 +94,7 @@ async function gradeAction(formData: FormData) {
     [scoreRaw, scoreTotal, scorePct, grade, gradingStatus, now, attemptId, active.tenant_id]
   );
 
-  redirect(`${returnPath}?exam_id=${examId}&tab=results&toast=Grades+saved`);
+  redirect(`${returnPath}${rpSep}exam_id=${examId}&tab=results&toast=Grades+saved`);
 }
 
 async function gradingReviewRespondAction(formData: FormData) {
@@ -171,7 +173,7 @@ async function gradingReviewRespondAction(formData: FormData) {
 export default async function ExamGradePage({
   searchParams,
 }: {
-  searchParams: Promise<{ attempt_id?: string; exam_id?: string; view?: string }>;
+  searchParams: Promise<{ attempt_id?: string; exam_id?: string; view?: string; return_to?: string }>;
 }) {
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
@@ -214,8 +216,9 @@ export default async function ExamGradePage({
      WHERE ea.id=? AND ea.exam_id=? AND ea.tenant_id=? AND ea.status='SUBMITTED'`,
     [attemptId, examId, tid]
   );
-  const attemptReturnPath = active.role === "TEACHER" ? "/teacher" : "/exam-builder";
-  if (!attempt) redirect(`${attemptReturnPath}?exam_id=${examId}&tab=results`);
+  const earlyReturn = params.return_to || (active.role === "TEACHER" ? "/teacher" : "/exam-builder");
+  const earlySep = earlyReturn.includes("?") ? "&" : "?";
+  if (!attempt) redirect(`${earlyReturn}${earlySep}exam_id=${examId}&tab=results`);
 
   // Fetch questions in teacher sort order.
   const questions = await all<{
@@ -380,15 +383,19 @@ export default async function ExamGradePage({
       : "Grade Submission";
 
   const isTeacher = active.role === "TEACHER";
-  const returnPath = isTeacher ? "/teacher" : "/exam-builder";
+  const explicitReturn = params.return_to || null;
+  const returnPath = explicitReturn || (isTeacher ? "/teacher" : "/exam-builder");
+  const isAdminWorkspace = explicitReturn?.startsWith("/school") ?? false;
 
+  const sep = returnPath.includes("?") ? "&" : "?";
   const backHref = isGradingApprover
     ? "/approvals"
-    : `${returnPath}?exam_id=${examId}&tab=results`;
+    : `${returnPath}${sep}exam_id=${examId}&tab=results`;
   const backLabel = isGradingApprover ? "← Approval Inbox" : "← Back to Results";
 
-  // Pending approvals count for teacher sidebar badge.
-  const pendingCount = isTeacher ? await first<{ cnt: number }>(
+  // Sidebar badge counts.
+  const needsSidebar = isTeacher || isAdminWorkspace;
+  const pendingCount = needsSidebar ? await first<{ cnt: number }>(
     `SELECT COUNT(*) AS cnt FROM sitting_approval_gates sag
      JOIN sitting_approval_responses sar
        ON sar.exam_id=sag.exam_id AND sar.gate_type=sag.gate_type
@@ -397,6 +404,10 @@ export default async function ExamGradePage({
     [auth.user!.id, tid]
   ) : null;
   const pendingNum = Number(pendingCount?.cnt ?? 0);
+  const pendingJoinRow = isAdminWorkspace ? await first<{ cnt: number }>(
+    "SELECT COUNT(*) AS cnt FROM join_requests WHERE tenant_id=? AND status='PENDING'", [tid]
+  ) : null;
+  const pendingJoinNum = Number(pendingJoinRow?.cnt ?? 0);
 
   // ---------- Determine mode for the client component ----------
   const engineMode: "grade" | "view" | "approver" = isGradingApprover
@@ -550,6 +561,40 @@ export default async function ExamGradePage({
             schoolName={active.tenant_name}
             roleName="Teacher"
             currentPath="/exam-grade"
+            switchSchool={auth.memberships.length > 1}
+            profile={{
+              user: { id: auth.user!.id, name: auth.user!.name, email: auth.user!.email, is_system_admin: auth.user!.is_system_admin },
+              memberships: auth.memberships.map(m => ({ tenant_id: m.tenant_id, tenant_name: m.tenant_name, role: m.role, status: "ACTIVE" })),
+              changePasswordAction,
+            }}
+          />
+        }
+        header={
+          <WorkspaceHeader
+            title={pageTitle}
+            subtitle={exam.title}
+            actions={
+              <a href={backHref} className="text-sm text-teal-700 hover:underline no-underline">
+                {backLabel}
+              </a>
+            }
+          />
+        }
+      >
+        {content}
+      </WorkspaceShell>
+    );
+  }
+
+  if (isAdminWorkspace) {
+    return (
+      <WorkspaceShell
+        sidebar={
+          <SidebarNav
+            items={getAdminNavItems(pendingNum, pendingJoinNum)}
+            schoolName={active.tenant_name}
+            roleName="School Admin"
+            currentPath="/school?section=sittings"
             switchSchool={auth.memberships.length > 1}
             profile={{
               user: { id: auth.user!.id, name: auth.user!.name, email: auth.user!.email, is_system_admin: auth.user!.is_system_admin },

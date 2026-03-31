@@ -1166,6 +1166,7 @@ async function ResultsTab({ examId, tenantId, resultsPublished, maxAttempts, pas
         hasGradeBands={gradeBands.length > 0}
         examId={examId}
         csvUrl={`/exam-results-csv?exam_id=${examId}`}
+        returnTo={returnPath}
       />
     </>
   );
