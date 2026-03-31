@@ -235,8 +235,16 @@ export default async function ExamPreviewPage({
   // Back link logic — match old build.
   const isTeacherOrAdmin = active && (active.role === "TEACHER" || active.role === "SCHOOL_ADMIN");
   const isTeacher = active?.role === "TEACHER";
-  const backHref = isTeacherOrAdmin ? `/exam-builder?exam_id=${examId}` : "/approvals";
-  const backLabel = isTeacherOrAdmin ? "← Exam Builder" : "← Approval Inbox";
+  const backHref = isTeacher
+    ? `/teacher?exam_id=${examId}`
+    : isTeacherOrAdmin
+      ? `/exam-builder?exam_id=${examId}`
+      : "/approvals";
+  const backLabel = isTeacher
+    ? "← Back to Exam"
+    : isTeacherOrAdmin
+      ? "← Exam Builder"
+      : "← Approval Inbox";
 
   // Pending approvals count for teacher sidebar badge.
   const pendingCount = isTeacher && tenantId ? await first<{ cnt: number }>(
@@ -306,7 +314,7 @@ export default async function ExamPreviewPage({
           <p className="text-sm text-gray-500 text-center py-4">
             No questions have been added to this exam yet.{" "}
             {isTeacherOrAdmin && (
-              <a href={`/exam-builder?exam_id=${examId}&tab=questions`} className="text-teal-700 underline">
+              <a href={isTeacher ? `/teacher?exam_id=${examId}&tab=questions` : `/exam-builder?exam_id=${examId}&tab=questions`} className="text-teal-700 underline">
                 Add questions →
               </a>
             )}
