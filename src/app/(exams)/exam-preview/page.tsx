@@ -8,6 +8,10 @@ import { requireAuth, pickActiveMembership } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
 import { PreviewToggle } from "@/components/exam/PreviewToggle";
+import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { SidebarNav } from "@/components/layout/SidebarNav";
+import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
+import { getTeacherNavItems } from "@/lib/teacher-nav";
 
 // ============================================================
 // Server Action: Respond to gate with per-question comments
@@ -230,11 +234,23 @@ export default async function ExamPreviewPage({
 
   // Back link logic — match old build.
   const isTeacherOrAdmin = active && (active.role === "TEACHER" || active.role === "SCHOOL_ADMIN");
+  const isTeacher = active?.role === "TEACHER";
   const backHref = isTeacherOrAdmin ? `/exam-builder?exam_id=${examId}` : "/approvals";
   const backLabel = isTeacherOrAdmin ? "← Exam Builder" : "← Approval Inbox";
 
+  // Pending approvals count for teacher sidebar badge.
+  const pendingCount = isTeacher && tenantId ? await first<{ cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM sitting_approval_gates sag
+     JOIN sitting_approval_responses sar
+       ON sar.exam_id=sag.exam_id AND sar.gate_type=sag.gate_type
+      AND sar.approver_id=sag.user_id AND sar.tenant_id=sag.tenant_id
+     WHERE sag.user_id=? AND sag.tenant_id=? AND sar.status='PENDING'`,
+    [userId, tenantId]
+  ) : null;
+  const pendingNum = Number(pendingCount?.cnt ?? 0);
+
   // ── Render ───────────────────────────────────────────────────────────────────
-  return (
+  const content = (
     <main className="max-w-2xl mx-auto p-4 mt-4">
       {/* Header card */}
       <Card>
@@ -350,4 +366,35 @@ export default async function ExamPreviewPage({
       ) : null}
     </main>
   );
+
+  if (isTeacher) {
+    return (
+      <WorkspaceShell
+        sidebar={
+          <SidebarNav
+            items={getTeacherNavItems(pendingNum)}
+            schoolName={active!.tenant_name}
+            roleName="Teacher"
+            currentPath="/exam-preview"
+            switchSchool={auth.memberships.length > 1}
+          />
+        }
+        header={
+          <WorkspaceHeader
+            title={exam.title}
+            subtitle="Exam Preview"
+            actions={
+              <a href={`/teacher?exam_id=${examId}`} className="text-sm text-teal-700 hover:underline no-underline">
+                ← Back to Exam
+              </a>
+            }
+          />
+        }
+      >
+        {content}
+      </WorkspaceShell>
+    );
+  }
+
+  return content;
 }
