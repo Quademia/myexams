@@ -15,6 +15,7 @@ import { changePasswordAction } from "@/lib/change-password";
 import { CourseDetail } from "@/components/admin/CourseDetail";
 import { ClassDetail } from "@/components/admin/ClassDetail";
 import { PeopleSection } from "@/components/admin/PeopleSection";
+import { JoinCodesSection } from "@/components/admin/JoinCodesSection";
 
 // ============================================================
 // Server Actions
@@ -356,6 +357,8 @@ export default async function SchoolWorkspacePage({
   const dupMax = params.dup_max || undefined;
 
   // People filter params.
+  const dupAction = params.dup_action || undefined;
+  const dupCourseId = params.dup_course_id || undefined;
   const peopleTab = params.tab || "members";
   const filterRole = params.role || undefined;
   const filterCourseId = params.course_id || undefined;
@@ -420,7 +423,8 @@ export default async function SchoolWorkspacePage({
       {section === "classes" && classId && <ClassDetail classId={classId} tab={tab} tenantId={tid} />}
       {/* People */}
       {section === "people" && <PeopleSection tenantId={tid} userId={userId} tab={peopleTab} filterRole={filterRole} filterCourseId={filterCourseId} filterClassId={filterClassId} email={email} exists={exists} userName={userName} error={error} />}
-      {section === "join-codes" && <SectionPlaceholder title="Join Codes" oldRoute="/school-join-codes" />}
+      {/* Join Codes */}
+      {section === "join-codes" && <JoinCodesSection tenantId={tid} error={error} dupWho={dupWho} dupAction={dupAction} dupCourseId={dupCourseId} dupAuto={dupAuto} dupMax={dupMax} />}
       {section === "sittings" && <SectionPlaceholder title="Sittings" oldRoute="/school-sittings" />}
     </WorkspaceShell>
   );
