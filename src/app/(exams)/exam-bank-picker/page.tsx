@@ -2,6 +2,10 @@
 // Exam Bank Picker — lets a teacher add questions from the question bank
 // into a specific exam they are building.
 //
+// NOTE (2026-03-31): Teachers now use the inline BankPickerTab inside the exam
+// builder (tab=bank) instead of navigating here. The standalone page still works
+// for school admins. Cleanup deferred until the full workspace restructure is complete.
+//
 // WHY THIS EXISTS:
 // When building an exam, a teacher might want to re-use questions they've
 // previously saved to the Question Bank. Rather than re-typing them,

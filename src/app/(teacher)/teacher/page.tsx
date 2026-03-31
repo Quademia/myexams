@@ -64,7 +64,7 @@ function StatusBadge({ status }: { status: string }) {
 export default async function TeacherPage({
   searchParams,
 }: {
-  searchParams: Promise<{ exam_id?: string; tab?: string; edit_q?: string }>;
+  searchParams: Promise<{ exam_id?: string; tab?: string; edit_q?: string; type?: string; search?: string; vis?: string }>;
 }) {
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
@@ -78,6 +78,9 @@ export default async function TeacherPage({
   const examId = params.exam_id || null;
   const tab = params.tab || "settings";
   const editQId = params.edit_q || null;
+  const bankFilterType = params.type || "";
+  const bankSearch = params.search || "";
+  const bankVis = params.vis || "";
 
   // Fetch all data in parallel.
   const [courses, standaloneExams, sittingExams, pendingCount] = await Promise.all([
@@ -189,6 +192,9 @@ export default async function TeacherPage({
           auth={auth}
           active={active}
           returnPath="/teacher"
+          bankFilterType={bankFilterType}
+          bankSearch={bankSearch}
+          bankVis={bankVis}
         />
       ) : (
         <>

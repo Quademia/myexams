@@ -10,7 +10,7 @@ import { ExamBuilderContent } from "@/components/exam/ExamBuilderContent";
 export default async function ExamBuilderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ exam_id?: string; tab?: string; edit_q?: string }>;
+  searchParams: Promise<{ exam_id?: string; tab?: string; edit_q?: string; type?: string; search?: string; vis?: string }>;
 }) {
   const auth = await requireAuth();
   const active = pickActiveMembership(auth);
@@ -22,6 +22,9 @@ export default async function ExamBuilderPage({
   const examId = params.exam_id;
   const tab = params.tab || "settings";
   const editQId = params.edit_q || null;
+  const bankFilterType = params.type || "";
+  const bankSearch = params.search || "";
+  const bankVis = params.vis || "";
   if (!examId) redirect("/teacher");
 
   // Verify exam exists and user has access.
@@ -50,6 +53,9 @@ export default async function ExamBuilderPage({
         auth={auth}
         active={active}
         returnPath="/exam-builder"
+        bankFilterType={bankFilterType}
+        bankSearch={bankSearch}
+        bankVis={bankVis}
       />
     </main>
   );
