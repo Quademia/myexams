@@ -123,13 +123,25 @@ Tasks:
       school admin gets plain layout as before. Shared nav via teacher-nav.ts.)
 - [x] Shared teacher sidebar extracted to src/lib/teacher-nav.ts — done 2026-03-30
       (single source of truth for nav items used by /teacher, /question-bank, /approvals)
-- [ ] Exam preview — convert Preview tab from page navigation to LargeModal (in progress)
-- [ ] Exam bank picker — convert from page to LargeModal
-- [ ] Exam grade — convert from page to LargeModal
+- [x] Exam preview — converted to inline PreviewTab in exam builder — done 2026-03-31
+      (decision changed: inline pane instead of LargeModal. Renders student view of
+      questions + read-only approver comments. /exam-preview stays as approver-only page.)
+- [x] Exam bank picker — converted to inline BankPickerTab in exam builder — done 2026-03-31
+      (decision changed: inline pane instead of LargeModal. Hidden tab=bank pane triggered
+      from Questions tab. Teacher stays on picker until clicking back. Filter/search/add
+      all work inline via server-side forms.)
+- [x] Exam grade — wrapped in WorkspaceShell for teachers — done 2026-03-31
+      (decision changed: stays as full page instead of LargeModal — too rich/interactive
+      for a modal. Two-column grading layout needs full viewport. Back links and server
+      action redirects made role-aware via returnPath pattern.)
+- [x] ProfileDrawer wired into teacher sidebar — done 2026-03-31
+      (SidebarNav accepts optional profile props. Clicking Profile opens drawer instead
+      of navigating. Shared changePasswordAction in src/lib/change-password.ts.
+      Switch school link in drawer for multi-school users.)
 - [ ] StudentDrawer — profile, courses, classes, attempts
-      (first used in exam builder Access and Results tabs)
-      (shared — will be reused in Phase 4)
-- [ ] Attempt review — LargeModal for teacher viewing student answers
+      (deferred to Phase 4 — no consumer in teacher workspace yet)
+- [x] Attempt review — not needed — done 2026-03-31
+      (covered by /exam-grade?view=1 which already shows student answers in view mode)
 
 Note: Approvals page enhanced with three sections — Pending (action required),
 All my approvals (full gate assignment history with status), Recent activity (last 10).
@@ -212,8 +224,9 @@ Tasks:
 1. Build the shell before any workspace content — nothing can proceed
    without Phase 2 complete
 2. Teacher workspace first — smallest scope, lowest risk, proves the pattern
-3. Shared components are built once — StudentDrawer built in Phase 3,
-   wired in Phase 4, never rebuilt
+3. Shared components are built once — ProfileDrawer and changePasswordAction
+   built in Phase 3, reusable by all future workspaces. StudentDrawer deferred
+   to Phase 4 where it has real consumers.
 4. Sidebar placeholder slots included from day one — future features
    add content, never restructure navigation
 5. Drawer vs modal is decided per feature when building — not predetermined
@@ -221,4 +234,4 @@ Tasks:
 
 ---
 
-*Last updated: 2026-03-30 — Phase 3 partially complete. Teacher workspace shell live. Remaining: preview modal, bank picker modal, exam grade modal, StudentDrawer, attempt review modal.*
+*Last updated: 2026-03-31 — Phase 3 complete. Teacher workspace fully operational with inline preview, inline bank picker, graded exam shell, and profile drawer. StudentDrawer deferred to Phase 4. Next: Phase 4 (School Admin workspace).*
