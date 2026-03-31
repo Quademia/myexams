@@ -2,6 +2,11 @@
 // Exam Preview — pure student view of the exam.
 // No correct answers, no model answers, no feedback.
 // Also serves as the approver review page when the user has a PENDING gate response.
+//
+// NOTE (2026-03-31): Teachers now use the inline PreviewTab inside the exam builder
+// instead of navigating here. The teacher code paths below still work if accessed
+// directly, but are no longer the primary flow. Cleanup deferred until the full
+// workspace restructure is complete.
 
 import { redirect } from "next/navigation";
 import { requireAuth, pickActiveMembership } from "@/lib/auth";

@@ -9,6 +9,7 @@ import { GradeBandsEditor } from "@/components/exam/GradeBandsEditor";
 import { CustomFieldsEditor } from "@/components/exam/CustomFieldsEditor";
 import { QuestionFormFields } from "@/components/exam/QuestionFormFields";
 import { ResultsTable } from "@/components/exam/ResultsTable";
+import { PreviewToggle } from "@/components/exam/PreviewToggle";
 
 // ============================================================
 // Server Actions
@@ -1212,6 +1213,95 @@ async function ApprovalsTab({ examId, tenantId, userRole, returnPath }: { examId
 }
 
 // ============================================================
+// Preview Tab — student view of questions + read-only approver comments
+// ============================================================
+
+async function PreviewTab({ examId, tenantId }: { examId: string; tenantId: string }) {
+  const { all } = getDb();
+
+  // Questions — NO model_answer, NO feedback (pure student view).
+  const questions = await all<{
+    id: string; question_text: string; question_type: string;
+    marks: number; sort_order: number;
+  }>(
+    "SELECT id, question_text, question_type, marks, sort_order FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC",
+    [examId]
+  );
+
+  // Options — NO is_correct (pure student view).
+  const optionsMap = new Map<string, { option_text: string; sort_order: number }[]>();
+  if (questions.length > 0) {
+    const questionIds = questions.map((q) => q.id);
+    const placeholders = questionIds.map(() => "?").join(",");
+    const opts = await all<{
+      question_id: string; option_text: string; sort_order: number;
+    }>(
+      `SELECT question_id, option_text, sort_order FROM exam_question_options WHERE question_id IN (${placeholders}) ORDER BY sort_order ASC`,
+      questionIds
+    );
+    for (const opt of opts) {
+      if (!optionsMap.has(opt.question_id)) optionsMap.set(opt.question_id, []);
+      optionsMap.get(opt.question_id)!.push(opt);
+    }
+  }
+
+  const totalMarks = questions.reduce((sum, q) => sum + Number(q.marks), 0);
+
+  const questionsWithOptions = questions.map(q => ({
+    id: q.id,
+    question_type: q.question_type,
+    question_text: q.question_text,
+    marks: q.marks,
+    options: (optionsMap.get(q.id) ?? []).map(o => ({ option_text: o.option_text })),
+  }));
+
+  // Read-only approver comments across all gates.
+  const otherCommentsByQ: Record<string, { approver_name: string; comment: string }[]> = {};
+  if (tenantId) {
+    const allComments = await all<{ question_id: string; comment: string; approver_name: string }>(
+      `SELECT sac.question_id, sac.comment, u.name AS approver_name
+       FROM sitting_approval_comments sac JOIN qa_users u ON u.id = sac.approver_id
+       WHERE sac.exam_id=? AND sac.tenant_id=?
+       ORDER BY sac.gate_type ASC, sac.created_at ASC`,
+      [examId, tenantId]
+    );
+    for (const c of allComments) {
+      if (!otherCommentsByQ[c.question_id]) otherCommentsByQ[c.question_id] = [];
+      otherCommentsByQ[c.question_id].push({ approver_name: c.approver_name, comment: c.comment });
+    }
+  }
+
+  if (questions.length === 0) {
+    return (
+      <Card>
+        <p className="text-sm text-gray-500 text-center py-4">
+          No questions have been added to this exam yet.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <div className="text-sm text-gray-500 mb-3">
+        {questions.length} question{questions.length !== 1 ? "s" : ""} · {totalMarks} mark{totalMarks !== 1 ? "s" : ""} total
+      </div>
+      <PreviewToggle
+        questions={questionsWithOptions}
+        isApproverMode={false}
+        approverGateType={null}
+        myComments={{}}
+        otherCommentsByQ={otherCommentsByQ}
+        examId={examId}
+      />
+      <div className="text-center text-xs text-gray-400 mt-2 mb-8">
+        End of preview — {questions.length} question{questions.length !== 1 ? "s" : ""} · {totalMarks} mark{totalMarks !== 1 ? "s" : ""} total
+      </div>
+    </>
+  );
+}
+
+// ============================================================
 // Main Component
 // ============================================================
 
@@ -1313,7 +1403,7 @@ export async function ExamBuilderContent({ examId, tab, editQId, auth, active, r
   const tabs = [
     { label: "Settings", value: "settings", href: `${base}&tab=settings` },
     { label: "Questions", value: "questions", href: `${base}&tab=questions` },
-    { label: "Preview", value: "preview", href: `/exam-preview?exam_id=${examId}` },
+    { label: "Preview", value: "preview", href: `${base}&tab=preview` },
     { label: "Publish", value: "publish", href: `${base}&tab=publish` },
     { label: "Access", value: "access", href: `${base}&tab=access` },
     { label: "Results", value: "results", href: `${base}&tab=results` },
@@ -1679,6 +1769,9 @@ export async function ExamBuilderContent({ examId, tab, editQId, auth, active, r
           </Card>
         </>
       )}
+
+      {/* Preview Tab */}
+      {tab === "preview" && <PreviewTab examId={exam.id} tenantId={tid} />}
 
       {/* Access Tab */}
       {tab === "access" && <AccessTab examId={exam.id} courseId={exam.course_id} tenantId={tid} examStatus={exam.status} returnPath={returnPath} />}
