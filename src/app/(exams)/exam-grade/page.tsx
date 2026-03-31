@@ -12,6 +12,10 @@ import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
 import { GradingEngine } from "@/components/exam/GradingEngine";
+import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { SidebarNav } from "@/components/layout/SidebarNav";
+import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
+import { getTeacherNavItems } from "@/lib/teacher-nav";
 
 // ============================================================
 // Server Actions
@@ -23,9 +27,10 @@ async function gradeAction(formData: FormData) {
   const active = pickActiveMembership(auth);
   if (!active || (active.role !== "TEACHER" && active.role !== "SCHOOL_ADMIN")) redirect("/");
 
+  const returnPath = (formData.get("return_path") as string) || "/exam-builder";
   const attemptId = formData.get("attempt_id") as string;
   const examId = formData.get("exam_id") as string;
-  if (!attemptId || !examId) redirect("/teacher");
+  if (!attemptId || !examId) redirect(returnPath);
 
   const { all, first, run } = getDb();
   const now = new Date().toISOString();
@@ -53,7 +58,7 @@ async function gradeAction(formData: FormData) {
     `SELECT id, grade_bands_json FROM exam_attempts WHERE id=? AND tenant_id=?`,
     [attemptId, active.tenant_id]
   );
-  if (!attempt) redirect(`/exam-builder?exam_id=${examId}&tab=results`);
+  if (!attempt) redirect(`${returnPath}?exam_id=${examId}&tab=results`);
 
   const rows = await all<{ score_awarded: number | null; marks: number; question_type: string }>(
     `SELECT a.score_awarded, q.marks, q.question_type
@@ -86,7 +91,7 @@ async function gradeAction(formData: FormData) {
     [scoreRaw, scoreTotal, scorePct, grade, gradingStatus, now, attemptId, active.tenant_id]
   );
 
-  redirect(`/exam-builder?exam_id=${examId}&tab=results&toast=Grades+saved`);
+  redirect(`${returnPath}?exam_id=${examId}&tab=results&toast=Grades+saved`);
 }
 
 async function gradingReviewRespondAction(formData: FormData) {
@@ -208,7 +213,8 @@ export default async function ExamGradePage({
      WHERE ea.id=? AND ea.exam_id=? AND ea.tenant_id=? AND ea.status='SUBMITTED'`,
     [attemptId, examId, tid]
   );
-  if (!attempt) redirect(`/exam-builder?exam_id=${examId}&tab=results`);
+  const attemptReturnPath = active.role === "TEACHER" ? "/teacher" : "/exam-builder";
+  if (!attempt) redirect(`${attemptReturnPath}?exam_id=${examId}&tab=results`);
 
   // Fetch questions in teacher sort order.
   const questions = await all<{
@@ -372,10 +378,24 @@ export default async function ExamGradePage({
       ? "View Submission"
       : "Grade Submission";
 
+  const isTeacher = active.role === "TEACHER";
+  const returnPath = isTeacher ? "/teacher" : "/exam-builder";
+
   const backHref = isGradingApprover
     ? "/approvals"
-    : `/exam-builder?exam_id=${examId}&tab=results`;
+    : `${returnPath}?exam_id=${examId}&tab=results`;
   const backLabel = isGradingApprover ? "← Approval Inbox" : "← Back to Results";
+
+  // Pending approvals count for teacher sidebar badge.
+  const pendingCount = isTeacher ? await first<{ cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM sitting_approval_gates sag
+     JOIN sitting_approval_responses sar
+       ON sar.exam_id=sag.exam_id AND sar.gate_type=sag.gate_type
+      AND sar.approver_id=sag.user_id AND sar.tenant_id=sag.tenant_id
+     WHERE sag.user_id=? AND sag.tenant_id=? AND sar.status='PENDING'`,
+    [auth.user!.id, tid]
+  ) : null;
+  const pendingNum = Number(pendingCount?.cnt ?? 0);
 
   // ---------- Determine mode for the client component ----------
   const engineMode: "grade" | "view" | "approver" = isGradingApprover
@@ -444,7 +464,7 @@ export default async function ExamGradePage({
   // Render
   // ============================================================
 
-  return (
+  const content = (
     <main className="max-w-6xl mx-auto p-4">
       {/* Header card */}
       <Card>
@@ -470,6 +490,7 @@ export default async function ExamGradePage({
         <form action={gradeAction}>
           <input type="hidden" name="attempt_id" value={attemptId} />
           <input type="hidden" name="exam_id" value={examId} />
+          <input type="hidden" name="return_path" value={returnPath} />
           {gradingEngine}
         </form>
       ) : isGradingApprover ? (
@@ -518,4 +539,35 @@ export default async function ExamGradePage({
       )}
     </main>
   );
+
+  if (isTeacher) {
+    return (
+      <WorkspaceShell
+        sidebar={
+          <SidebarNav
+            items={getTeacherNavItems(pendingNum)}
+            schoolName={active.tenant_name}
+            roleName="Teacher"
+            currentPath="/exam-grade"
+            switchSchool={auth.memberships.length > 1}
+          />
+        }
+        header={
+          <WorkspaceHeader
+            title={pageTitle}
+            subtitle={exam.title}
+            actions={
+              <a href={backHref} className="text-sm text-teal-700 hover:underline no-underline">
+                {backLabel}
+              </a>
+            }
+          />
+        }
+      >
+        {content}
+      </WorkspaceShell>
+    );
+  }
+
+  return content;
 }
