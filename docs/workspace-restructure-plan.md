@@ -114,18 +114,26 @@ Sidebar sections:
 - [placeholder] Settings
 
 Tasks:
-- [ ] Teacher workspace using WorkspaceShell
-- [ ] Exam list in sidebar, exam builder loads in main content area
-      (no navigation away when clicking an exam)
+- [x] Teacher workspace using WorkspaceShell — done 2026-03-30
+- [x] Exam list in sidebar, exam builder loads in main content area — done 2026-03-30
+      (two-pane list: standalone exams left, sitting exams right. URL-driven state.
+      returnPath pattern for all server action redirects.)
+- [x] /question-bank and /approvals wrapped in teacher workspace shell — done 2026-03-30
+      (role-based branching: teacher gets WorkspaceShell with persistent sidebar,
+      school admin gets plain layout as before. Shared nav via teacher-nav.ts.)
+- [x] Shared teacher sidebar extracted to src/lib/teacher-nav.ts — done 2026-03-30
+      (single source of truth for nav items used by /teacher, /question-bank, /approvals)
+- [ ] Exam preview — convert Preview tab from page navigation to LargeModal (in progress)
+- [ ] Exam bank picker — convert from page to LargeModal
+- [ ] Exam grade — convert from page to LargeModal
 - [ ] StudentDrawer — profile, courses, classes, attempts
       (first used in exam builder Access and Results tabs)
       (shared — will be reused in Phase 4)
-- [ ] Exam bank picker — convert from page to drawer/modal
-      (slides in over questions tab, closes after adding)
-- [ ] Exam grade — convert from page to drawer/modal
-      (launched from results table, results stay visible underneath)
-- [ ] Attempt review — full-screen modal for teacher viewing student answers
-      (all questions and answers, modal closes to reveal results table)
+- [ ] Attempt review — LargeModal for teacher viewing student answers
+
+Note: Approvals page enhanced with three sections — Pending (action required),
+All my approvals (full gate assignment history with status), Recent activity (last 10).
+allAssignments query uses LEFT JOIN so gates with no response yet appear as "Awaiting response".
 
 ---
 
@@ -213,4 +221,4 @@ Tasks:
 
 ---
 
-*Last updated: 2026-03-30 — Phase 1 complete, Phase 2 complete.*
+*Last updated: 2026-03-30 — Phase 3 partially complete. Teacher workspace shell live. Remaining: preview modal, bank picker modal, exam grade modal, StudentDrawer, attempt review modal.*

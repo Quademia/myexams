@@ -344,6 +344,13 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - ~~Built Phase 2 shared workspace components: WorkspaceShell, SidebarNav, WorkspaceHeader, DrawerShell, LargeModal, ProfileDrawer~~ ✅ Done 2026-03-30
 - ~~LargeModal is a large centred panel (max-w-3xl, max-h-88vh) — workspace always visible behind backdrop~~ ✅ Done 2026-03-30
 
+### Immediate — Prompt 7
+- ~~Phase 3 teacher workspace shell complete: `/teacher`, `/question-bank`, `/approvals` all use persistent WorkspaceShell with teacher sidebar~~ ✅ Done 2026-03-30
+- ~~Shared teacher nav extracted to `src/lib/teacher-nav.ts` — single source of truth for sidebar items~~ ✅ Done 2026-03-30
+- ~~Role-based shell detection on `/question-bank` and `/approvals` — teachers get workspace, school admins get plain layout (Phase 4 will add school admin shell)~~ ✅ Done 2026-03-30
+- ~~Approvals page improved — three sections: Pending, All my approvals (full gate history), Recent activity~~ ✅ Done 2026-03-30
+- ~~`@types/react-dom` installed for createPortal support~~ ✅ Done 2026-03-30
+
 ### Future
 - Phase 10 — Question Bank bulk CSV import
 - Phase 11 — UI/design polish sprint + PWA installability
@@ -353,7 +360,8 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - StudentDrawer and TeacherDrawer components
 - Aggregate reporting
 - Self-service school signup
+- Phase 3 remaining: exam preview modal, exam bank picker modal, exam grade modal, StudentDrawer, attempt review modal
 
 ---
 
-*Last updated: 2026-03-30 — Phase 1 + Phase 2 workspace restructure complete, toast notifications (58 actions), confirm dialogs (21 actions).*
+*Last updated: 2026-03-30 — Phase 3 teacher workspace shell live, toast notifications (58 actions), confirm dialogs (21 actions).*
