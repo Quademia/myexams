@@ -16,6 +16,9 @@ import { CourseDetail } from "@/components/admin/CourseDetail";
 import { ClassDetail } from "@/components/admin/ClassDetail";
 import { PeopleSection } from "@/components/admin/PeopleSection";
 import { JoinCodesSection } from "@/components/admin/JoinCodesSection";
+import { SittingDetail } from "@/components/admin/SittingDetail";
+import { GateSettingsPane } from "@/components/admin/GateSettingsPane";
+import { ExamBuilderContent } from "@/components/exam/ExamBuilderContent";
 
 // ============================================================
 // Server Actions
@@ -60,6 +63,22 @@ async function createClassAction(formData: FormData) {
     [crypto.randomUUID(), active.tenant_id, name, yearGroup || null, academicYear || null, description || null, now, now]
   );
   redirect("/school?section=classes&toast=Class+created");
+}
+
+async function createSittingAction() {
+  "use server";
+  const auth = await requireAuth();
+  const active = pickActiveMembership(auth);
+  if (!active || active.role !== "SCHOOL_ADMIN") redirect("/");
+
+  const { run } = getDb();
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  await run(
+    "INSERT INTO exam_sittings (id, tenant_id, title, status, created_by, created_at, updated_at) VALUES (?,?,?,'DRAFT',?,?,?)",
+    [id, active.tenant_id, "New Sitting", auth.user!.id, now, now]
+  );
+  redirect(`/school?section=sittings&sitting_id=${id}&toast=Sitting+created`);
 }
 
 // ============================================================
@@ -299,19 +318,72 @@ async function ClassesSection({ tenantId }: { tenantId: string }) {
 }
 
 // ============================================================
-// Placeholder for sections not yet migrated
+// Section: Sittings list
 // ============================================================
 
-function SectionPlaceholder({ title, oldRoute }: { title: string; oldRoute: string }) {
+async function SittingsSection({ tenantId }: { tenantId: string }) {
+  const { all } = getDb();
+  const sittings = await all<{
+    id: string; title: string; academic_year: string | null; status: string;
+    paper_count: number; created_at: string;
+  }>(
+    `SELECT es.id, es.title, es.academic_year, es.status, es.created_at,
+       (SELECT COUNT(*) FROM exam_sitting_papers esp WHERE esp.sitting_id = es.id) AS paper_count
+     FROM exam_sittings es WHERE es.tenant_id=? ORDER BY es.created_at DESC`,
+    [tenantId]
+  );
+
+  function StatusBadge({ status }: { status: string }) {
+    const styles: Record<string, string> = {
+      ACTIVE: "bg-green-50 text-green-700",
+      CLOSED: "bg-red-50 text-red-700",
+      DRAFT: "bg-gray-100 text-gray-500",
+    };
+    return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${styles[status] || styles.DRAFT}`}>{status}</span>;
+  }
+
   return (
     <Card>
-      <div className="text-center py-8">
-        <h2 className="text-lg font-bold text-gray-400">{title}</h2>
-        <p className="text-sm text-gray-400 mt-2">This section is being migrated to the workspace.</p>
-        <a href={oldRoute} className="inline-block mt-3 text-sm text-teal-700 hover:underline">
-          Open in current view →
-        </a>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-semibold">Exam Sittings</h2>
+        <form action={createSittingAction}>
+          <button type="submit" className="px-4 py-2 bg-teal-700 text-white text-sm font-semibold rounded-lg hover:bg-teal-800">
+            + New Sitting
+          </button>
+        </form>
       </div>
+      {sittings.length === 0 ? (
+        <p className="text-sm text-gray-400 py-4 text-center">No sittings yet — create one to group exam papers into a formal sitting event.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Title</th>
+                <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Academic Year</th>
+                <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Status</th>
+                <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2">Papers</th>
+                <th className="text-left text-xs text-gray-500 uppercase tracking-wide py-2 px-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sittings.map((s) => (
+                <tr key={s.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="py-3 px-2 font-medium">
+                    <a href={`/school?section=sittings&sitting_id=${s.id}`} className="text-teal-700 hover:underline">{s.title}</a>
+                  </td>
+                  <td className="py-3 px-2 text-gray-600 text-sm">{s.academic_year || "—"}</td>
+                  <td className="py-3 px-2"><StatusBadge status={s.status} /></td>
+                  <td className="py-3 px-2 text-gray-600">{s.paper_count}</td>
+                  <td className="py-3 px-2">
+                    <a href={`/school?section=sittings&sitting_id=${s.id}`} className="text-sm text-teal-700 hover:underline">Open →</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }
@@ -351,6 +423,9 @@ export default async function SchoolWorkspacePage({
   // Detail params.
   const courseId = params.course_id || null;
   const classId = params.class_id || null;
+  const sittingId = params.sitting_id || null;
+  const examId = params.exam_id || null;
+  const editExam = params.edit === "1";
   const tab = params.tab || "details";
   const dupWho = params.dup_who || undefined;
   const dupAuto = params.dup_auto || undefined;
@@ -425,7 +500,23 @@ export default async function SchoolWorkspacePage({
       {section === "people" && <PeopleSection tenantId={tid} userId={userId} tab={peopleTab} filterRole={filterRole} filterCourseId={filterCourseId} filterClassId={filterClassId} email={email} exists={exists} userName={userName} error={error} />}
       {/* Join Codes */}
       {section === "join-codes" && <JoinCodesSection tenantId={tid} error={error} dupWho={dupWho} dupAction={dupAction} dupCourseId={dupCourseId} dupAuto={dupAuto} dupMax={dupMax} />}
-      {section === "sittings" && <SectionPlaceholder title="Sittings" oldRoute="/school-sittings" />}
+      {/* Sittings — list, builder, gate settings, or exam builder */}
+      {section === "sittings" && !sittingId && <SittingsSection tenantId={tid} />}
+      {section === "sittings" && sittingId && !examId && <SittingDetail sittingId={sittingId} tab={tab === "details" ? "settings" : tab} tenantId={tid} />}
+      {section === "sittings" && sittingId && examId && !editExam && <GateSettingsPane sittingId={sittingId} examId={examId} tenantId={tid} />}
+      {section === "sittings" && sittingId && examId && editExam && (
+        <ExamBuilderContent
+          examId={examId}
+          tab={tab}
+          editQId={params.edit_q || null}
+          auth={auth}
+          active={active}
+          returnPath={`/school?section=sittings&sitting_id=${sittingId}&edit=1`}
+          bankFilterType={params.type || ""}
+          bankSearch={params.search || ""}
+          bankVis={params.vis || ""}
+        />
+      )}
     </WorkspaceShell>
   );
 }

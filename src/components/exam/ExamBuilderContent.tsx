@@ -11,6 +11,13 @@ import { QuestionFormFields } from "@/components/exam/QuestionFormFields";
 import { ResultsTable } from "@/components/exam/ResultsTable";
 import { PreviewToggle } from "@/components/exam/PreviewToggle";
 
+// Helper: build exam-scoped base URL from returnPath, handling paths that already have "?".
+// e.g. rpBase("/teacher", "abc") → "/teacher?exam_id=abc"
+// e.g. rpBase("/school?section=sittings&sitting_id=X&edit=1", "abc") → "/school?section=sittings&sitting_id=X&edit=1&exam_id=abc"
+function rpBase(returnPath: string, examId: string): string {
+  return `${returnPath}${returnPath.includes("?") ? "&" : "?"}exam_id=${examId}`;
+}
+
 // ============================================================
 // Server Actions
 // ============================================================
@@ -25,7 +32,7 @@ async function saveSettingsAction(formData: FormData) {
   const examId = formData.get("exam_id") as string;
   const { first, run } = getDb();
   const exam = await first<{ status: string }>("SELECT status FROM exams WHERE id=? AND tenant_id=?", [examId, active!.tenant_id]);
-  if (!exam || exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`${returnPath}?exam_id=${examId}`);
+  if (!exam || exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`${rpBase(returnPath, examId)}`);
 
   // Block teachers from saving settings if exam belongs to a sitting.
   const sitting = await first(
@@ -35,7 +42,7 @@ async function saveSettingsAction(formData: FormData) {
     [examId, active!.tenant_id]
   );
   if (sitting && active!.role === "TEACHER") {
-    redirect(`${returnPath}?exam_id=${examId}&tab=settings`);
+    redirect(`${rpBase(returnPath, examId)}&tab=settings`);
   }
 
   const now = new Date().toISOString();
@@ -108,7 +115,7 @@ async function saveSettingsAction(formData: FormData) {
     }
   }
 
-  redirect(`${returnPath}?exam_id=${examId}&tab=settings&toast=Settings+saved`);
+  redirect(`${rpBase(returnPath, examId)}&tab=settings&toast=Settings+saved`);
 }
 
 
@@ -127,17 +134,17 @@ async function publishAction(formData: FormData) {
   const exam = await first<{ status: string; results_release_policy: string | null }>(
     "SELECT status, results_release_policy FROM exams WHERE id=? AND tenant_id=?", [examId, active!.tenant_id]
   );
-  if (!exam || exam.status !== "DRAFT") redirect(`${returnPath}?exam_id=${examId}&tab=publish`);
+  if (!exam || exam.status !== "DRAFT") redirect(`${rpBase(returnPath, examId)}&tab=publish`);
 
   // Block teacher if exam belongs to a sitting.
   const sitting = await first(
     `SELECT 1 FROM exam_sitting_papers WHERE exam_id=? LIMIT 1`, [examId]
   );
-  if (sitting && active!.role === "TEACHER") redirect(`${returnPath}?exam_id=${examId}&tab=publish`);
+  if (sitting && active!.role === "TEACHER") redirect(`${rpBase(returnPath, examId)}&tab=publish`);
 
   // Must have at least one question to publish.
   const qCount = await first<{ c: number }>("SELECT COUNT(*) AS c FROM exam_questions WHERE exam_id=?", [examId]);
-  if (!qCount || Number(qCount.c) === 0) redirect(`${returnPath}?exam_id=${examId}&tab=publish`);
+  if (!qCount || Number(qCount.c) === 0) redirect(`${rpBase(returnPath, examId)}&tab=publish`);
 
   // If results_release_policy is IMMEDIATE, auto-release results on publish.
   const releaseOnPublish = exam.results_release_policy === "IMMEDIATE";
@@ -145,7 +152,7 @@ async function publishAction(formData: FormData) {
     `UPDATE exams SET status='PUBLISHED', published_at=?, published_by=?, updated_at=?${releaseOnPublish ? ", results_published_at=?" : ""} WHERE id=?`,
     releaseOnPublish ? [now, auth.user!.id, now, now, examId] : [now, auth.user!.id, now, examId]
   );
-  redirect(`${returnPath}?exam_id=${examId}&tab=publish&toast=Exam+published`);
+  redirect(`${rpBase(returnPath, examId)}&tab=publish&toast=Exam+published`);
 }
 
 async function closeAction(formData: FormData) {
@@ -163,7 +170,7 @@ async function closeAction(formData: FormData) {
   const sitting = await first(
     `SELECT 1 FROM exam_sitting_papers WHERE exam_id=? LIMIT 1`, [examId]
   );
-  if (sitting && active!.role === "TEACHER") redirect(`${returnPath}?exam_id=${examId}&tab=publish`);
+  if (sitting && active!.role === "TEACHER") redirect(`${rpBase(returnPath, examId)}&tab=publish`);
 
   // Check results_release_policy — auto-release results if AFTER_CLOSE.
   const exam = await first<{ results_release_policy: string | null }>(
@@ -174,7 +181,7 @@ async function closeAction(formData: FormData) {
     `UPDATE exams SET status='CLOSED', closed_at=?, updated_at=?${releaseOnClose ? ", results_published_at=?" : ""} WHERE id=?`,
     releaseOnClose ? [now, now, now, examId] : [now, now, examId]
   );
-  redirect(`${returnPath}?exam_id=${examId}&tab=publish&toast=Exam+closed`);
+  redirect(`${rpBase(returnPath, examId)}&tab=publish&toast=Exam+closed`);
 }
 
 async function releaseResultsAction(formData: FormData) {
@@ -191,11 +198,11 @@ async function releaseResultsAction(formData: FormData) {
   const sitting = await first(
     `SELECT 1 FROM exam_sitting_papers WHERE exam_id=? LIMIT 1`, [examId]
   );
-  if (sitting && active!.role === "TEACHER") redirect(`${returnPath}?exam_id=${examId}&tab=publish`);
+  if (sitting && active!.role === "TEACHER") redirect(`${rpBase(returnPath, examId)}&tab=publish`);
 
   await run("UPDATE exams SET results_published_at=?, updated_at=? WHERE id=? AND tenant_id=?",
     [new Date().toISOString(), new Date().toISOString(), examId, active!.tenant_id]);
-  redirect(`${returnPath}?exam_id=${examId}&tab=publish&toast=Results+released+to+students`);
+  redirect(`${rpBase(returnPath, examId)}&tab=publish&toast=Results+released+to+students`);
 }
 
 async function addAccessClassAction(formData: FormData) {
@@ -212,7 +219,7 @@ async function addAccessClassAction(formData: FormData) {
 
   // Validate class belongs to tenant.
   const cls = await first("SELECT id FROM classes WHERE id=? AND tenant_id=?", [classId, active.tenant_id]);
-  if (!cls) redirect(`${returnPath}?exam_id=${examId}&tab=access`);
+  if (!cls) redirect(`${rpBase(returnPath, examId)}&tab=access`);
 
   // Use NOT IN subquery to only fetch students not already in access (matches old code).
   const toAdd = await all<{ user_id: string }>(
@@ -224,7 +231,7 @@ async function addAccessClassAction(formData: FormData) {
     await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
       [crypto.randomUUID(), examId, s.user_id, auth.user!.id, now]);
   }
-  redirect(`${returnPath}?exam_id=${examId}&tab=access&toast=Class+access+granted`);
+  redirect(`${rpBase(returnPath, examId)}&tab=access&toast=Class+access+granted`);
 }
 
 async function addAccessCourseAction(formData: FormData) {
@@ -237,7 +244,7 @@ async function addAccessCourseAction(formData: FormData) {
   const examId = formData.get("exam_id") as string;
   const { first, all, run } = getDb();
   const exam = await first<{ course_id: string }>("SELECT course_id FROM exams WHERE id=? AND tenant_id=?", [examId, active.tenant_id]);
-  if (!exam) redirect(`${returnPath}?exam_id=${examId}&tab=access`);
+  if (!exam) redirect(`${rpBase(returnPath, examId)}&tab=access`);
 
   const now = new Date().toISOString();
   // Use NOT IN subquery (matches old code pattern).
@@ -250,7 +257,7 @@ async function addAccessCourseAction(formData: FormData) {
     await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
       [crypto.randomUUID(), examId, s.user_id, auth.user!.id, now]);
   }
-  redirect(`${returnPath}?exam_id=${examId}&tab=access&toast=Course+access+granted`);
+  redirect(`${rpBase(returnPath, examId)}&tab=access&toast=Course+access+granted`);
 }
 
 async function addAccessStudentAction(formData: FormData) {
@@ -270,14 +277,14 @@ async function addAccessStudentAction(formData: FormData) {
     "SELECT 1 AS x FROM memberships WHERE user_id=? AND tenant_id=? AND role='STUDENT' AND status='ACTIVE' LIMIT 1",
     [userId, active.tenant_id]
   );
-  if (!member) redirect(`${returnPath}?exam_id=${examId}&tab=access`);
+  if (!member) redirect(`${rpBase(returnPath, examId)}&tab=access`);
 
   const exists = await first("SELECT 1 FROM exam_access WHERE exam_id=? AND user_id=?", [examId, userId]);
   if (!exists) {
     await run("INSERT INTO exam_access (id, exam_id, user_id, added_by, created_at) VALUES (?,?,?,?,?)",
       [crypto.randomUUID(), examId, userId, auth.user!.id, now]);
   }
-  redirect(`${returnPath}?exam_id=${examId}&tab=access&toast=Student+access+granted`);
+  redirect(`${rpBase(returnPath, examId)}&tab=access&toast=Student+access+granted`);
 }
 
 async function removeAccessAction(formData: FormData) {
@@ -293,10 +300,10 @@ async function removeAccessAction(formData: FormData) {
 
   // Don't allow removal on closed exams (matches old code).
   const exam = await first<{ status: string }>("SELECT status FROM exams WHERE id=? AND tenant_id=?", [examId, active.tenant_id]);
-  if (exam?.status === "CLOSED") redirect(`${returnPath}?exam_id=${examId}&tab=access`);
+  if (exam?.status === "CLOSED") redirect(`${rpBase(returnPath, examId)}&tab=access`);
 
   await run("DELETE FROM exam_access WHERE id=? AND exam_id=?", [accessId, examId]);
-  redirect(`${returnPath}?exam_id=${examId}&tab=access&toast=Access+removed`);
+  redirect(`${rpBase(returnPath, examId)}&tab=access&toast=Access+removed`);
 }
 
 async function gateSubmitAction(formData: FormData) {
@@ -336,7 +343,7 @@ async function gateSubmitAction(formData: FormData) {
     }
   }
 
-  redirect(`${returnPath}?exam_id=${examId}&tab=approvals&toast=Submitted+for+approval`);
+  redirect(`${rpBase(returnPath, examId)}&tab=approvals&toast=Submitted+for+approval`);
 }
 
 // ============================================================
@@ -362,11 +369,11 @@ async function addQuestionAction(formData: FormData) {
     "SELECT id, status FROM exams WHERE id=? AND tenant_id=?", [examId, tid]
   );
   if (!exam) redirect("/teacher");
-  if (exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`${returnPath}?exam_id=${examId}&tab=questions`);
+  if (exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`${rpBase(returnPath, examId)}&tab=questions`);
 
   const qType = (formData.get("question_type") as string) || "MCQ";
   const qText = (formData.get("question_text") as string || "").trim();
-  if (!qText) redirect(`${returnPath}?exam_id=${examId}&tab=questions`);
+  if (!qText) redirect(`${rpBase(returnPath, examId)}&tab=questions`);
 
   const marksVal = Math.max(0.5, parseFloat(formData.get("marks") as string) || 1);
   const pm = qType === "MULTIPLE_SELECT" ? (formData.get("partial_marking") === "1" ? 1 : 0) : 0;
@@ -394,7 +401,7 @@ async function addQuestionAction(formData: FormData) {
   // Insert options.
   await saveQuestionOptions(qId, qType, formData, now);
 
-  redirect(`${returnPath}?exam_id=${examId}&tab=questions&toast=Question+added`);
+  redirect(`${rpBase(returnPath, examId)}&tab=questions&toast=Question+added`);
 }
 
 async function updateQuestionAction(formData: FormData) {
@@ -416,11 +423,11 @@ async function updateQuestionAction(formData: FormData) {
     "SELECT id, status FROM exams WHERE id=? AND tenant_id=?", [examId, tid]
   );
   if (!exam) redirect("/teacher");
-  if (exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`${returnPath}?exam_id=${examId}&tab=questions`);
+  if (exam.status === "PUBLISHED" || exam.status === "CLOSED") redirect(`${rpBase(returnPath, examId)}&tab=questions`);
 
   const qType = (formData.get("question_type") as string) || "MCQ";
   const qText = (formData.get("question_text") as string || "").trim();
-  if (!qText) redirect(`${returnPath}?exam_id=${examId}&tab=questions&edit_q=${questionId}`);
+  if (!qText) redirect(`${rpBase(returnPath, examId)}&tab=questions&edit_q=${questionId}`);
 
   const marksVal = Math.max(0.5, parseFloat(formData.get("marks") as string) || 1);
   const pm = qType === "MULTIPLE_SELECT" ? (formData.get("partial_marking") === "1" ? 1 : 0) : 0;
@@ -449,7 +456,7 @@ async function updateQuestionAction(formData: FormData) {
   await run("DELETE FROM exam_question_options WHERE question_id=?", [questionId]);
   await saveQuestionOptions(questionId, qType, formData, now);
 
-  redirect(`${returnPath}?exam_id=${examId}&tab=questions&toast=Question+updated`);
+  redirect(`${rpBase(returnPath, examId)}&tab=questions&toast=Question+updated`);
 }
 
 async function deleteQuestionAction(formData: FormData) {
@@ -483,7 +490,7 @@ async function deleteQuestionAction(formData: FormData) {
     await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [i + 1, remaining[i].id]);
   }
 
-  redirect(`${returnPath}?exam_id=${examId}&tab=questions&toast=Question+deleted`);
+  redirect(`${rpBase(returnPath, examId)}&tab=questions&toast=Question+deleted`);
 }
 
 async function reorderQuestionAction(formData: FormData) {
@@ -504,7 +511,7 @@ async function reorderQuestionAction(formData: FormData) {
   const exam = await first<{ id: string }>(
     "SELECT id FROM exams WHERE id=? AND tenant_id=?", [examId, tid]
   );
-  if (!exam) redirect(`${returnPath}?exam_id=${examId}&tab=questions`);
+  if (!exam) redirect(`${rpBase(returnPath, examId)}&tab=questions`);
 
   const questions = await all<{ id: string; sort_order: number }>(
     "SELECT id, sort_order FROM exam_questions WHERE exam_id=? ORDER BY sort_order ASC", [examId]
@@ -514,7 +521,7 @@ async function reorderQuestionAction(formData: FormData) {
   const swapIdx = direction === "up" ? idx - 1 : idx + 1;
 
   if (idx < 0 || swapIdx < 0 || swapIdx >= questions.length) {
-    redirect(`${returnPath}?exam_id=${examId}&tab=questions`);
+    redirect(`${rpBase(returnPath, examId)}&tab=questions`);
   }
 
   // Swap sort_order values between the two questions.
@@ -523,7 +530,7 @@ async function reorderQuestionAction(formData: FormData) {
   await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [orderB, questions[idx].id]);
   await run("UPDATE exam_questions SET sort_order=? WHERE id=?", [orderA, questions[swapIdx].id]);
 
-  redirect(`${returnPath}?exam_id=${examId}&tab=questions`);
+  redirect(`${rpBase(returnPath, examId)}&tab=questions`);
 }
 
 // ── Question helper: save to bank ────────────────────────────────────────────
@@ -658,7 +665,7 @@ async function addFromBankAction(formData: FormData) {
   );
   if (!exam) redirect(returnPath);
   if (exam.status === "PUBLISHED" || exam.status === "CLOSED") {
-    redirect(`${returnPath}?exam_id=${examId}&tab=bank`);
+    redirect(`${rpBase(returnPath, examId)}&tab=bank`);
   }
 
   const bankQ = await first<{
@@ -668,7 +675,7 @@ async function addFromBankAction(formData: FormData) {
     "SELECT id, question_type, question_text, marks, partial_marking, model_answer, feedback FROM question_bank WHERE id=? AND tenant_id=?",
     [bankQuestionId, active.tenant_id]
   );
-  if (!bankQ) redirect(`${returnPath}?exam_id=${examId}&tab=bank`);
+  if (!bankQ) redirect(`${rpBase(returnPath, examId)}&tab=bank`);
 
   const bankOptions = await all<{
     option_text: string; is_correct: number; sort_order: number;
@@ -706,7 +713,7 @@ async function addFromBankAction(formData: FormData) {
     );
   }
 
-  redirect(`${returnPath}?exam_id=${examId}&tab=bank&toast=Question+added+to+exam`);
+  redirect(`${rpBase(returnPath, examId)}&tab=bank&toast=Question+added+to+exam`);
 }
 
 // ============================================================
@@ -807,7 +814,7 @@ async function QuestionsTab({ examId, locked, editQId, returnPath }: { examId: s
           </div>
           {!locked && (
             <a
-              href={`${returnPath}?exam_id=${examId}&tab=bank`}
+              href={`${rpBase(returnPath, examId)}&tab=bank`}
               className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200 no-underline"
             >
               Add from bank
@@ -890,7 +897,7 @@ async function QuestionsTab({ examId, locked, editQId, returnPath }: { examId: s
                     <button type="submit" disabled={idx === questions.length - 1} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 disabled:opacity-30" title="Move down">↓</button>
                   </form>
                   {/* Edit */}
-                  <a href={`${returnPath}?exam_id=${examId}&tab=questions&edit_q=${q.id}`} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 text-center no-underline">Edit</a>
+                  <a href={`${rpBase(returnPath, examId)}&tab=questions&edit_q=${q.id}`} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200 text-center no-underline">Edit</a>
                   {/* Delete */}
                   <ConfirmButton label="Delete" message="Delete this question? This cannot be undone." formAction={deleteQuestionAction} fields={{ exam_id: examId, question_id: q.id, return_path: returnPath }} />
                 </div>
@@ -1421,13 +1428,13 @@ async function BankPickerTab({
 
   const questionTypes = ["MCQ", "TRUE_FALSE", "SHORT_ANSWER", "ESSAY", "MULTIPLE_SELECT"];
   const isEditable = !locked;
-  const bankBase = `${returnPath}?exam_id=${examId}&tab=bank`;
+  const bankBase = `${rpBase(returnPath, examId)}&tab=bank`;
 
   return (
     <>
       {/* Header */}
       <Card>
-        <a href={`${returnPath}?exam_id=${examId}&tab=questions`} className="text-sm text-gray-400 hover:underline">
+        <a href={`${rpBase(returnPath, examId)}&tab=questions`} className="text-sm text-gray-400 hover:underline">
           ← Back to Questions
         </a>
         <h2 className="text-lg font-bold mt-2">Add from Question Bank</h2>
@@ -1563,7 +1570,7 @@ async function BankPickerTab({
       {/* Footer link back */}
       {bankQuestions.length > 0 && (
         <div className="text-center mt-2 mb-8">
-          <a href={`${returnPath}?exam_id=${examId}&tab=questions`} className="text-sm text-teal-700 hover:underline">
+          <a href={`${rpBase(returnPath, examId)}&tab=questions`} className="text-sm text-teal-700 hover:underline">
             ← Back to Questions
           </a>
         </div>
@@ -1629,7 +1636,7 @@ export async function ExamBuilderContent({ examId, tab, editQId, auth, active, r
   const sittingLocked = !!sittingForExam && active?.role === "TEACHER";
 
   const locked = exam.status === "PUBLISHED" || exam.status === "CLOSED";
-  const base = `${returnPath}?exam_id=${examId}`;
+  const base = rpBase(returnPath, examId);
 
   // Question count + total marks for publish tab summary.
   const qStats = await first<{ c: number; total_marks: number }>(
