@@ -76,7 +76,7 @@ export default async function ApprovalsPage() {
   const userId = auth.user!.id;
   const tid = active.tenant_id;
 
-  const [pendingItems, recentItems] = await Promise.all([
+  const [pendingItems, allAssignments, recentItems] = await Promise.all([
     all<{
       exam_id: string; gate_type: string; sitting_id: string | null;
       exam_title: string; sitting_title: string | null; submitter_name: string | null;
@@ -99,6 +99,29 @@ export default async function ApprovalsPage() {
       [userId, tid]
     ),
     all<{
+      exam_id: string; exam_title: string; sitting_title: string | null;
+      gate_type: string; my_status: string | null;
+      my_note: string | null; my_responded_at: string | null;
+    }>(
+      `SELECT
+         e.id AS exam_id, e.title AS exam_title, es.title AS sitting_title,
+         sag.gate_type,
+         sar.status AS my_status, sar.note AS my_note,
+         sar.updated_at AS my_responded_at
+       FROM sitting_approval_gates sag
+       JOIN exams e ON e.id = sag.exam_id
+       LEFT JOIN exam_sitting_papers esp ON esp.exam_id = e.id
+       LEFT JOIN exam_sittings es ON es.id = esp.sitting_id
+       LEFT JOIN sitting_approval_responses sar
+         ON sar.exam_id = sag.exam_id
+         AND sar.gate_type = sag.gate_type
+         AND sar.approver_id = sag.user_id
+         AND sar.tenant_id = sag.tenant_id
+       WHERE sag.user_id=? AND sag.tenant_id=?
+       ORDER BY e.title ASC, sag.gate_type ASC`,
+      [userId, tid]
+    ),
+    all<{
       exam_id: string; gate_type: string; exam_title: string;
       sitting_title: string | null; my_status: string;
       my_note: string | null; responded_at: string | null;
@@ -113,7 +136,7 @@ export default async function ApprovalsPage() {
        JOIN exams e ON e.id=sag.exam_id
        LEFT JOIN exam_sittings es ON es.id=sag.sitting_id
        WHERE sag.user_id=? AND sag.tenant_id=? AND sar.status IN ('APPROVED','REJECTED')
-       ORDER BY sar.updated_at DESC LIMIT 30`,
+       ORDER BY sar.updated_at DESC LIMIT 10`,
       [userId, tid]
     ),
   ]);
@@ -175,9 +198,78 @@ export default async function ApprovalsPage() {
         )}
       </Card>
 
-      {/* Recent responses */}
+      {/* All my approvals */}
+      <Card title="All my approvals">
+        {allAssignments.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">You have not been assigned to any approval gates.</p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {allAssignments.map((item, i) => (
+              <div key={i} className="py-3 flex items-start justify-between gap-4 flex-wrap">
+                {/* Left — exam info */}
+                <div className="flex-1 min-w-[200px]">
+                  <div className="font-medium text-sm">{item.exam_title}</div>
+                  {item.sitting_title && (
+                    <div className="text-xs text-gray-400 mt-0.5">{item.sitting_title}</div>
+                  )}
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="inline-block px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
+                      {gateLabel(item.gate_type)}
+                    </span>
+                    <a
+                      href={item.gate_type === "GRADING"
+                        ? `/exam-grade?exam_id=${item.exam_id}&view=1`
+                        : `/exam-preview?exam_id=${item.exam_id}`}
+                      className="text-xs text-teal-700 hover:underline"
+                    >
+                      View exam &rarr;
+                    </a>
+                  </div>
+                </div>
+
+                {/* Right — status */}
+                <div className="text-right shrink-0">
+                  {item.my_status === "APPROVED" && (
+                    <>
+                      <span className="inline-block px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-xs font-semibold">
+                        ✓ Approved
+                      </span>
+                      {item.my_responded_at && (
+                        <div className="text-xs text-gray-400 mt-1">{fmtISO(item.my_responded_at)}</div>
+                      )}
+                      {item.my_note && (
+                        <div className="text-xs text-gray-500 mt-1 max-w-[200px] text-right italic">&ldquo;{item.my_note}&rdquo;</div>
+                      )}
+                    </>
+                  )}
+                  {item.my_status === "REJECTED" && (
+                    <>
+                      <span className="inline-block px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-xs font-semibold">
+                        ✗ Rejected
+                      </span>
+                      {item.my_responded_at && (
+                        <div className="text-xs text-gray-400 mt-1">{fmtISO(item.my_responded_at)}</div>
+                      )}
+                      {item.my_note && (
+                        <div className="text-xs text-gray-500 mt-1 max-w-[200px] text-right italic">&ldquo;{item.my_note}&rdquo;</div>
+                      )}
+                    </>
+                  )}
+                  {!item.my_status && (
+                    <span className="inline-block px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs font-semibold">
+                      ⏳ Awaiting response
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Recent activity */}
       {recentItems.length > 0 && (
-        <Card title="Recent">
+        <Card title="Recent activity">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
