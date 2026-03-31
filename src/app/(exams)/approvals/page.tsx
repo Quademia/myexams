@@ -6,6 +6,10 @@ import { redirect } from "next/navigation";
 import { requireAuth, pickActiveMembership, roleLabel, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
+import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { SidebarNav } from "@/components/layout/SidebarNav";
+import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
+import { getTeacherNavItems } from "@/lib/teacher-nav";
 
 async function respondAction(formData: FormData) {
   "use server";
@@ -67,6 +71,7 @@ export default async function ApprovalsPage() {
   const active = pickActiveMembership(auth);
   if (!active) redirect("/choose-school");
 
+  const isTeacher = active.role === "TEACHER";
   const { all } = getDb();
   const userId = auth.user!.id;
   const tid = active.tenant_id;
@@ -113,28 +118,8 @@ export default async function ApprovalsPage() {
     ),
   ]);
 
-  return (
-    <main className="max-w-4xl mx-auto p-4">
-      <Card>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-lg font-bold">Approval Inbox</h1>
-            <div className="flex gap-2 mt-1">
-              <span className="inline-block px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-xs font-semibold">
-                {active.tenant_name}
-              </span>
-              <span className="inline-block px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-xs font-semibold">
-                {roleLabel(active.role)}
-              </span>
-            </div>
-          </div>
-          <div className="flex gap-3 text-sm">
-            <a href="/" className="text-teal-700 hover:underline">Home</a>
-            <a href="/profile" className="text-teal-700 hover:underline">Profile</a>
-          </div>
-        </div>
-      </Card>
-
+  const content = (
+    <>
       <Card title={`Pending (${pendingItems.length})`}>
         {pendingItems.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-6">All clear — no pending approvals.</p>
@@ -228,6 +213,55 @@ export default async function ApprovalsPage() {
           </div>
         </Card>
       )}
+    </>
+  );
+
+  if (isTeacher) {
+    return (
+      <WorkspaceShell
+        sidebar={
+          <SidebarNav
+            items={getTeacherNavItems(pendingItems.length)}
+            schoolName={active.tenant_name}
+            roleName="Teacher"
+            currentPath="/approvals"
+            switchSchool={auth.memberships.length > 1}
+          />
+        }
+        header={
+          <WorkspaceHeader
+            title="Approvals"
+            subtitle="Your pending gate approvals"
+          />
+        }
+      >
+        {content}
+      </WorkspaceShell>
+    );
+  }
+
+  return (
+    <main className="max-w-4xl mx-auto p-4">
+      <Card>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-lg font-bold">Approval Inbox</h1>
+            <div className="flex gap-2 mt-1">
+              <span className="inline-block px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-xs font-semibold">
+                {active.tenant_name}
+              </span>
+              <span className="inline-block px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-xs font-semibold">
+                {roleLabel(active.role)}
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-3 text-sm">
+            <a href="/" className="text-teal-700 hover:underline">Home</a>
+            <a href="/profile" className="text-teal-700 hover:underline">Profile</a>
+          </div>
+        </div>
+      </Card>
+      {content}
     </main>
   );
 }

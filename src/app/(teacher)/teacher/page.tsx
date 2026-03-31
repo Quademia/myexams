@@ -10,8 +10,8 @@ import { Card } from "@/components/ui/Card";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
 import { SidebarNav } from "@/components/layout/SidebarNav";
-import type { NavItem } from "@/components/layout/SidebarNav";
 import { ExamBuilderContent } from "@/components/exam/ExamBuilderContent";
+import { getTeacherNavItems } from "@/lib/teacher-nav";
 
 // ============================================================
 // Server Actions
@@ -148,21 +148,8 @@ export default async function TeacherPage({
     examTitle = exam.title;
   }
 
-  // Sidebar navigation items.
-  const navItems: NavItem[] = [
-    { label: "My Exams", href: "/teacher", icon: "\u{1F4CB}", active: true },
-    { label: "Question Bank", href: "/question-bank", icon: "\u{1F4DA}" },
-    {
-      label: "Approvals",
-      href: "/approvals",
-      icon: "\u2705",
-      badge: pendingNum > 0 ? pendingNum : undefined,
-    },
-    { label: "", href: "", icon: "", divider: true, dividerLabel: "Coming soon" },
-    { label: "My Students", href: "/teacher", icon: "\u{1F465}", soon: true },
-    { label: "Analytics", href: "/teacher", icon: "\u{1F4CA}", soon: true },
-    { label: "Settings", href: "/teacher", icon: "\u2699\uFE0F", soon: true },
-  ];
+  // Sidebar navigation items (shared definition).
+  const navItems = getTeacherNavItems(pendingNum);
 
   return (
     <WorkspaceShell

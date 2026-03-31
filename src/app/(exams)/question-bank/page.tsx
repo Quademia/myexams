@@ -22,6 +22,10 @@ import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { BankQuestionFormFields } from "@/components/bank/BankQuestionFormFields";
+import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { SidebarNav } from "@/components/layout/SidebarNav";
+import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
+import { getTeacherNavItems } from "@/lib/teacher-nav";
 
 // ============================================================
 // Server Actions
@@ -241,7 +245,22 @@ export default async function QuestionBankPage({
   const userId = auth.user!.id;
   const tid = active.tenant_id;
 
+  const isTeacher = active.role === "TEACHER";
   const { first, all } = getDb();
+
+  // Pending approval count for teacher sidebar badge.
+  let pendingNum = 0;
+  if (isTeacher) {
+    const pc = await first<{ cnt: number }>(
+      `SELECT COUNT(*) AS cnt FROM sitting_approval_gates sag
+       JOIN sitting_approval_responses sar
+         ON sar.exam_id=sag.exam_id AND sar.gate_type=sag.gate_type
+        AND sar.approver_id=sag.user_id AND sar.tenant_id=sag.tenant_id
+       WHERE sag.user_id=? AND sag.tenant_id=? AND sar.status='PENDING'`,
+      [userId, tid]
+    );
+    pendingNum = Number(pc?.cnt ?? 0);
+  }
 
   // ── Load questions ─────────────────────────────────────────────────────────
   let query = `SELECT qb.id, qb.question_type, qb.question_text, qb.marks, qb.visibility,
@@ -302,22 +321,8 @@ export default async function QuestionBankPage({
   );
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  return (
-    <main className="max-w-3xl mx-auto p-4 mt-4">
-      {/* Header */}
-      <Card>
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <a href="/teacher" className="text-sm text-gray-400 hover:underline">← Back to My Exams</a>
-            <h1 className="text-lg font-bold mt-1">Question Bank</h1>
-            <p className="text-sm text-gray-500">{school?.name || "Your school"}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500">{auth.user!.name}</span>
-            <a href="/logout" className="text-sm text-gray-400 hover:underline">Logout</a>
-          </div>
-        </div>
-      </Card>
+  const content = (
+    <>
 
       {/* Filter bar — uses plain <a> links so no client JS is needed */}
       <Card>
@@ -462,6 +467,50 @@ export default async function QuestionBankPage({
           />
         </form>
       </Card>
+    </>
+  );
+
+  if (isTeacher) {
+    return (
+      <WorkspaceShell
+        sidebar={
+          <SidebarNav
+            items={getTeacherNavItems(pendingNum)}
+            schoolName={active.tenant_name}
+            roleName="Teacher"
+            currentPath="/question-bank"
+            switchSchool={auth.memberships.length > 1}
+          />
+        }
+        header={
+          <WorkspaceHeader
+            title="Question Bank"
+            subtitle="Your personal and shared question library"
+          />
+        }
+      >
+        {content}
+      </WorkspaceShell>
+    );
+  }
+
+  return (
+    <main className="max-w-3xl mx-auto p-4 mt-4">
+      {/* Header — school admin only (teachers use workspace header) */}
+      <Card>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <a href="/school" className="text-sm text-gray-400 hover:underline">← Back</a>
+            <h1 className="text-lg font-bold mt-1">Question Bank</h1>
+            <p className="text-sm text-gray-500">{school?.name || "Your school"}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">{auth.user!.name}</span>
+            <a href="/logout" className="text-sm text-gray-400 hover:underline">Logout</a>
+          </div>
+        </div>
+      </Card>
+      {content}
     </main>
   );
 }
