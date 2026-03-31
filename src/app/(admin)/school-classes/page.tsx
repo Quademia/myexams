@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// Classes list now lives in /school?section=classes (inline in school/page.tsx).
+// This file will be removed in a future cleanup pass.
 // src/app/school-classes/page.tsx
 // Classes list page — table of classes with student counts + Create form.
 

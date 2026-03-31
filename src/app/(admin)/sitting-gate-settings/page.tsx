@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// Gate settings now lives in /school?section=sittings&sitting_id=X&exam_id=Y (src/components/admin/GateSettingsPane.tsx).
+// This file will be removed in a future cleanup pass.
 // src/app/sitting-gate-settings/page.tsx
 // Gate settings page — assign approvers to QUESTIONS, GRADING, RESULTS gates
 // for a specific paper in a sitting.

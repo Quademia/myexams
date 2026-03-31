@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// Class detail now lives in /school?section=classes&class_id=X (src/components/admin/ClassDetail.tsx).
+// This file will be removed in a future cleanup pass.
 // src/app/school-class/page.tsx
 // Class detail page — restructured with 3 tabs: Details, Students, Courses.
 

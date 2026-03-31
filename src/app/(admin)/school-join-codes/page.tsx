@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// Join codes now lives in /school?section=join-codes (src/components/admin/JoinCodesSection.tsx).
+// This file will be removed in a future cleanup pass.
 // src/app/school-join-codes/page.tsx
 // Join Codes page — 3 sections: Active Codes, Create Code, Pending Requests.
 // Uses plain English questions ("Who is this for?" + "What should happen?")

@@ -10,7 +10,20 @@
       "Bash(mv ExamEngine.tsx GradingEngine.tsx GradeBandsEditor.tsx CustomFieldsEditor.tsx QuestionForm.tsx QuestionFormFields.tsx PreviewToggle.tsx ResultsTable.tsx exam/)",
       "Bash(mv BankQuestionForm.tsx BankQuestionFormFields.tsx bank/)",
       "Bash(xargs sed:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(git pull:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(cat \"/c/Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\(auth\\)/profile/page.tsx\")",
+      "Bash(wc -l /Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\\\\\(admin\\\\\\)/school-course/page.tsx /Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\\\\\(admin\\\\\\)/school-class/page.tsx /Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\\\\\(admin\\\\\\)/sitting-builder/page.tsx /Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\\\\\(admin\\\\\\)/sitting-gate-settings/page.tsx)",
+      "Bash(wc -l \"C:/Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\(admin\\)/school-course/page.tsx\" \"C:/Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\(admin\\)/school-class/page.tsx\" \"C:/Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\(admin\\)/sitting-builder/page.tsx\" \"C:/Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/src/app/\\(admin\\)/sitting-gate-settings/page.tsx\")",
+      "Bash(xargs grep:*)",
+      "Bash(for f:*)",
+      "Bash(do)",
+      "Read(//c/Users/confi/qacademy-beta-b/.claude/worktrees/charming-albattani/**)",
+      "Bash(done)"
     ]
   }
 }

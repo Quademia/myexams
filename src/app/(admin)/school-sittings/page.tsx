@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// Sittings list now lives in /school?section=sittings (inline in school/page.tsx).
+// This file will be removed in a future cleanup pass.
 // src/app/school-sittings/page.tsx
 // Sittings list on the school admin nav — shows all sittings with paper counts.
 // Links to the sitting builder for each one. Also has a "New Sitting" button.

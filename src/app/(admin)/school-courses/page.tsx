@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// Courses list now lives in /school?section=courses (inline in school/page.tsx).
+// This file will be removed in a future cleanup pass.
 // src/app/school-courses/page.tsx
 // Courses list page — clean table of courses with a Create button.
 // Each row links to the course detail page.

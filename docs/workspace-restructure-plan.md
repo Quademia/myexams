@@ -168,17 +168,37 @@ Sidebar sections:
 - [placeholder] Data Export
 
 Tasks:
-- [ ] School Admin workspace using WorkspaceShell
-- [ ] List → detail pattern for Courses
-      (course list on left/top, course detail loads in main content area)
-- [ ] List → detail pattern for Classes
-      (same pattern as courses)
+- [x] School Admin workspace using WorkspaceShell — done 2026-03-31
+      (single /school entry point with sidebar nav. All 10 admin routes consolidated
+      into URL-driven sections: /school?section=courses, classes, people, join-codes, sittings.
+      ProfileDrawer wired in. admin-nav.ts created with sidebar items + placeholders.)
+- [x] List → detail pattern for Courses — done 2026-03-31
+      (courses list inline, CourseDetail component with 5 tabs and 8 server actions.
+      URL: /school?section=courses&course_id=X&tab=Y)
+- [x] List → detail pattern for Classes — done 2026-03-31
+      (classes list inline, ClassDetail component with 3 tabs and 6 server actions.
+      URL: /school?section=classes&class_id=X&tab=Y)
+- [x] People section migrated — done 2026-03-31
+      (PeopleSection component with 2 tabs, 5 server actions, dynamic filters.
+      URL: /school?section=people&tab=members|add)
+- [x] Join Codes section migrated — done 2026-03-31
+      (JoinCodesSection component with 4 server actions incl race-condition-safe approve.
+      URL: /school?section=join-codes)
+- [x] Sittings section migrated (deepest level) — done 2026-03-31
+      (SittingDetail component with 3 tabs, 4 server actions.
+      GateSettingsPane component with 3 server actions — rendered as sub-pane.
+      Exam builder loads inline via ExamBuilderContent with rpBase() URL joining.
+      URL: /school?section=sittings&sitting_id=X&tab=Y
+      Gate settings: &exam_id=Y. Exam builder: &exam_id=Y&edit=1&tab=Z)
+- [x] Exam grade/view returns wired for admin workspace — done 2026-03-31
+      (ResultsTable passes return_to param to /exam-grade. exam-grade reads it,
+      uses for redirects, wraps in admin WorkspaceShell when return_to starts with /school.)
 - [ ] TeacherDrawer — profile, courses, exams
-      (used in People page and Course teachers tab)
-- [ ] Gate settings — convert from page to drawer/modal
-      (launched from sitting builder papers tab)
-- [ ] Wire StudentDrawer into admin pages
-      (People, Class detail, Course students tab, Sitting results)
+      (deferred — used in People page and Course teachers tab)
+- [ ] StudentDrawer — profile, courses, classes, attempts
+      (deferred — used in People, Class detail, Course students tab, Sitting results)
+- [ ] Cleanup: delete 9 old admin route files + SchoolLayout.tsx
+      (all marked DEPRECATED 2026-03-31, safe to remove)
 
 ---
 
@@ -234,4 +254,4 @@ Tasks:
 
 ---
 
-*Last updated: 2026-03-31 — Phase 3 complete. Teacher workspace fully operational with inline preview, inline bank picker, graded exam shell, and profile drawer. StudentDrawer deferred to Phase 4. Next: Phase 4 (School Admin workspace).*
+*Last updated: 2026-03-31 — Phase 3 complete. Phase 4 complete (admin workspace fully operational). All admin sections consolidated into /school with URL-driven state. Remaining: delete old admin files, TeacherDrawer, StudentDrawer, then Phase 5 (Student) and Phase 6 (System Admin).*

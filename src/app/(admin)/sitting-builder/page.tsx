@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// Sitting builder now lives in /school?section=sittings&sitting_id=X (src/components/admin/SittingDetail.tsx).
+// This file will be removed in a future cleanup pass.
 // src/app/sitting-builder/page.tsx
 // Sitting Builder — the main page for managing an exam sitting.
 // 3 tabs: Settings, Papers (with merged approval gates), Results.

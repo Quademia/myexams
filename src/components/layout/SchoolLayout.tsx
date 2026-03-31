@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// SchoolLayout is superseded by WorkspaceShell + SidebarNav in the admin workspace.
+// This file will be removed in a future cleanup pass.
 // src/components/SchoolLayout.tsx
 // Shared layout for all school admin pages — header + navigation bar.
 // Every /school* page wraps its content in this component.

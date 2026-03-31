@@ -1,3 +1,6 @@
+// DEPRECATED (2026-03-31): This page is superseded by the admin workspace at /school.
+// People management now lives in /school?section=people (src/components/admin/PeopleSection.tsx).
+// This file will be removed in a future cleanup pass.
 // src/app/school-people/page.tsx
 // People page — 2 tabs: Members (with filters) and Add Person (with email check).
 // Members tab shows all school members with course/class pills and role management.
