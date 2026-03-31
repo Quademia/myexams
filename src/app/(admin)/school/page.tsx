@@ -14,6 +14,7 @@ import { getAdminNavItems } from "@/lib/admin-nav";
 import { changePasswordAction } from "@/lib/change-password";
 import { CourseDetail } from "@/components/admin/CourseDetail";
 import { ClassDetail } from "@/components/admin/ClassDetail";
+import { PeopleSection } from "@/components/admin/PeopleSection";
 
 // ============================================================
 // Server Actions
@@ -354,6 +355,16 @@ export default async function SchoolWorkspacePage({
   const dupAuto = params.dup_auto || undefined;
   const dupMax = params.dup_max || undefined;
 
+  // People filter params.
+  const peopleTab = params.tab || "members";
+  const filterRole = params.role || undefined;
+  const filterCourseId = params.course_id || undefined;
+  const filterClassId = params.class_id || undefined;
+  const email = params.email || undefined;
+  const exists = params.exists || undefined;
+  const userName = params.user_name || undefined;
+  const error = params.error || undefined;
+
   // Counts for sidebar badges.
   const { first } = getDb();
   const [pendingApprovalRow, pendingJoinRow] = await Promise.all([
@@ -407,7 +418,8 @@ export default async function SchoolWorkspacePage({
       {/* Classes — list or detail */}
       {section === "classes" && !classId && <ClassesSection tenantId={tid} />}
       {section === "classes" && classId && <ClassDetail classId={classId} tab={tab} tenantId={tid} />}
-      {section === "people" && <SectionPlaceholder title="People" oldRoute="/school-people" />}
+      {/* People */}
+      {section === "people" && <PeopleSection tenantId={tid} userId={userId} tab={peopleTab} filterRole={filterRole} filterCourseId={filterCourseId} filterClassId={filterClassId} email={email} exists={exists} userName={userName} error={error} />}
       {section === "join-codes" && <SectionPlaceholder title="Join Codes" oldRoute="/school-join-codes" />}
       {section === "sittings" && <SectionPlaceholder title="Sittings" oldRoute="/school-sittings" />}
     </WorkspaceShell>
