@@ -12,8 +12,9 @@ interface WorkspaceShellProps {
 export function WorkspaceShell({ sidebar, header, children }: WorkspaceShellProps) {
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar — hidden on mobile, visible on desktop */}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-gray-200">
+      {/* Sidebar — hidden on mobile, visible on desktop. Sticky so it stays
+          in view while the main content scrolls. Height capped to viewport. */}
+      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-gray-200 sticky top-0 h-screen overflow-hidden">
         {sidebar}
       </aside>
 
