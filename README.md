@@ -316,62 +316,10 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 ## What's Next
 
-### Immediate — Prompt 3
-- ~~Password reset flow — token generated, stored in `verification_tokens`, email sent via Resend, validated on reset page~~ ✅ Done 2026-03-28
-- ~~Session & security hardening — rate limiting, auth event logging, concurrent session limits, idle timeout, session revocation on password reset, cross-tab sync, IP hashing, token hashing~~ ✅ Done 2026-03-29
-- Email verification on signup
+See **[docs/build-list.md](docs/build-list.md)** for the full working list of features to build, ideas, and deferred items.
 
-### Immediate — Prompt 4
-- ~~Fix `/join` page — old custom session behavior and unsafe account reuse on create-account path~~ ✅ Done 2026-03-29 (`signIn`-based flow with existing-email guard)
-
-### Deferred Phase 2
-- ~~Confirm dialogs on destructive actions — `ConfirmButton` component built and wired to 21 actions~~ ✅ Done 2026-03-30
-- Sequential question navigation in exam preview
-- 💬 badge on Results pane where grading gate comments exist
-- Approver overall note in Approvals pane
-- Remove `/setup` link from login page before real production launch
-- System admin accessing exam builder without active school — needs clean fix
-
-### Immediate — Prompt 5
-- ~~Set session and idle timeout to production values (4hr JWT, 28min idle, 2min warning countdown)~~ ✅ Done 2026-03-30
-- ~~Toast notification component built (`src/components/ui/Toast.tsx`) — reads `?toast=` and `?toast_type=` from URL, auto-dismisses after 4 seconds, three types: success/error/info, added to root layout~~ ✅ Done 2026-03-30
-- ~~Toast messages wired to all 58 server actions across 18 files~~ ✅ Done 2026-03-30
-- ~~ConfirmButton client component built (`src/components/ui/ConfirmButton.tsx`) — modal confirmation with danger/warning variants, programmatic form submit via useRef~~ ✅ Done 2026-03-30
-- ~~ConfirmButton wired to 21 destructive/consequential actions across 8 files — includes deletes, removes, revokes, publish, close, release results, disable gate. Self-removal guard preserved on school-people page.~~ ✅ Done 2026-03-30
-
-### Immediate — Prompt 6
-- ~~Merged `/sittings` into `/school-sittings` — single route, added created date column, removed duplicate~~ ✅ Done 2026-03-30
-- ~~Built Phase 2 shared workspace components: WorkspaceShell, SidebarNav, WorkspaceHeader, DrawerShell, LargeModal, ProfileDrawer~~ ✅ Done 2026-03-30
-- ~~LargeModal is a large centred panel (max-w-3xl, max-h-88vh) — workspace always visible behind backdrop~~ ✅ Done 2026-03-30
-
-### Immediate — Prompt 7
-- ~~Phase 3 teacher workspace shell complete: `/teacher`, `/question-bank`, `/approvals` all use persistent WorkspaceShell with teacher sidebar~~ ✅ Done 2026-03-30
-- ~~Shared teacher nav extracted to `src/lib/teacher-nav.ts` — single source of truth for sidebar items~~ ✅ Done 2026-03-30
-- ~~Role-based shell detection on `/question-bank` and `/approvals` — teachers get workspace, school admins get plain layout (Phase 4 will add school admin shell)~~ ✅ Done 2026-03-30
-- ~~Approvals page improved — three sections: Pending, All my approvals (full gate history), Recent activity~~ ✅ Done 2026-03-30
-- ~~`@types/react-dom` installed for createPortal support~~ ✅ Done 2026-03-30
-
-### Immediate — Prompt 8
-- ~~Workspace restructure complete — all 4 roles (Teacher, School Admin, Student, System Admin) use WorkspaceShell with shared sidebar, ProfileDrawer, and mobile hamburger menu~~ ✅ Done 2026-04-01
-- ~~Deprecated admin pages archived to `src/_archived/` (not deleted), `tsconfig.json` excludes them from compilation~~ ✅ Done 2026-04-01
-- ~~System Admin page restructured — extracted OverviewSection, SchoolsSection, UsersSection; reduced from 822 to ~310 lines; URL param changed from `?module=` to `?section=`~~ ✅ Done 2026-04-01
-
-### Build list — new features from workspace plan
-- StudentDrawer — slide-in panel showing student profile, courses, classes, attempt history. Consumers: admin People section, Class detail, Course students tab, Sitting results
-- TeacherDrawer — slide-in panel showing teacher profile, courses, exams. Consumers: admin People section, Course teachers tab
-- Student result summary drawer/modal — quick view of score/grade/pass-fail without navigating away from student dashboard
-- Student attempt review modal — review submitted answers inline (student-facing)
-- Student dashboard overview — welcome banner, quick stats, action items, recent activity (separate from exam list)
-
-### Future
-- Question Bank bulk CSV import
-- UI/design polish sprint + PWA installability
-- ~~NextAuth type declarations — extend properly via `next-auth.d.ts`~~ ✅ Done 2026-03-29 (session.user.id, active_tenant_id, session_token)
-- Microsoft SSO for organisational accounts — requires publisher verification in Azure
-- ~~Toast notifications~~ ✅ Done 2026-03-30
-- Aggregate reporting
-- Self-service school signup
+See **[docs/market-and-roadmap.md](docs/market-and-roadmap.md)** for strategic direction and long-term planning.
 
 ---
 
-*Last updated: 2026-04-01 — Workspace restructure complete (all 4 roles). System Admin restructured. Deprecated admin pages archived.*
+*Last updated: 2026-04-01 — Workspace restructure complete (all 4 roles). Build list moved to docs/build-list.md.*
