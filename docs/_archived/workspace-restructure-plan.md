@@ -254,4 +254,4 @@ Tasks:
 
 ---
 
-*Last updated: 2026-03-31 — Phase 3 complete. Phase 4 complete (admin workspace fully operational). All admin sections consolidated into /school with URL-driven state. Remaining: delete old admin files, TeacherDrawer, StudentDrawer, then Phase 5 (Student) and Phase 6 (System Admin).*
+*COMPLETED: 2026-04-01 — All 6 phases done. All 4 roles (Teacher, School Admin, Student, System Admin) use WorkspaceShell. Deprecated admin files archived to src/_archived/. System Admin restructured from 822 to ~310 lines. StudentDrawer, TeacherDrawer, and student-facing modals moved to build list as new features (not restructuring work).*

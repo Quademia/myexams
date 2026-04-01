@@ -351,17 +351,27 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 - ~~Approvals page improved — three sections: Pending, All my approvals (full gate history), Recent activity~~ ✅ Done 2026-03-30
 - ~~`@types/react-dom` installed for createPortal support~~ ✅ Done 2026-03-30
 
+### Immediate — Prompt 8
+- ~~Workspace restructure complete — all 4 roles (Teacher, School Admin, Student, System Admin) use WorkspaceShell with shared sidebar, ProfileDrawer, and mobile hamburger menu~~ ✅ Done 2026-04-01
+- ~~Deprecated admin pages archived to `src/_archived/` (not deleted), `tsconfig.json` excludes them from compilation~~ ✅ Done 2026-04-01
+- ~~System Admin page restructured — extracted OverviewSection, SchoolsSection, UsersSection; reduced from 822 to ~310 lines; URL param changed from `?module=` to `?section=`~~ ✅ Done 2026-04-01
+
+### Build list — new features from workspace plan
+- StudentDrawer — slide-in panel showing student profile, courses, classes, attempt history. Consumers: admin People section, Class detail, Course students tab, Sitting results
+- TeacherDrawer — slide-in panel showing teacher profile, courses, exams. Consumers: admin People section, Course teachers tab
+- Student result summary drawer/modal — quick view of score/grade/pass-fail without navigating away from student dashboard
+- Student attempt review modal — review submitted answers inline (student-facing)
+- Student dashboard overview — welcome banner, quick stats, action items, recent activity (separate from exam list)
+
 ### Future
-- Phase 10 — Question Bank bulk CSV import
-- Phase 11 — UI/design polish sprint + PWA installability
+- Question Bank bulk CSV import
+- UI/design polish sprint + PWA installability
 - ~~NextAuth type declarations — extend properly via `next-auth.d.ts`~~ ✅ Done 2026-03-29 (session.user.id, active_tenant_id, session_token)
 - Microsoft SSO for organisational accounts — requires publisher verification in Azure
 - ~~Toast notifications~~ ✅ Done 2026-03-30
-- StudentDrawer and TeacherDrawer components
 - Aggregate reporting
 - Self-service school signup
-- Phase 3 remaining: exam preview modal, exam bank picker modal, exam grade modal, StudentDrawer, attempt review modal
 
 ---
 
-*Last updated: 2026-03-30 — Phase 3 teacher workspace shell live, toast notifications (58 actions), confirm dialogs (21 actions).*
+*Last updated: 2026-04-01 — Workspace restructure complete (all 4 roles). System Admin restructured. Deprecated admin pages archived.*
