@@ -355,7 +355,6 @@ export default async function ApprovalsPage() {
           </div>
           <div className="flex gap-3 text-sm">
             <a href="/" className="text-teal-700 hover:underline">Home</a>
-            <a href="/profile" className="text-teal-700 hover:underline">Profile</a>
           </div>
         </div>
       </Card>
