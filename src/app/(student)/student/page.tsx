@@ -1,10 +1,16 @@
 // src/app/student/page.tsx
-// Student dashboard — shows assigned exams, attempt status, and sitting results.
+// Student Workspace — Phase 5 of the workspace restructure.
+// Uses WorkspaceShell with sidebar. Shows assigned exams, attempt status, and sitting results.
 
 import { redirect } from "next/navigation";
-import { requireAuth, pickActiveMembership, roleLabel, fmtISO } from "@/lib/auth";
+import { requireAuth, pickActiveMembership, fmtISO } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { Card } from "@/components/ui/Card";
+import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
+import { SidebarNav } from "@/components/layout/SidebarNav";
+import { getStudentNavItems } from "@/lib/student-nav";
+import { changePasswordAction } from "@/lib/change-password";
 
 // ── Badge helper ────────────────────────────────────────────────────────
 // Returns a label + Tailwind colour classes for each exam state.
@@ -145,37 +151,37 @@ export default async function StudentPage() {
   // 5. Filter out DRAFT exams for rendering
   const visibleExams = exams.filter((e) => e.status !== "DRAFT");
 
+  // Sidebar navigation items
+  const navItems = getStudentNavItems();
+
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <main className="max-w-5xl mx-auto p-4">
-      {/* Header card */}
-      <Card>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-lg font-bold">Student</h1>
-            <div className="flex gap-2 mt-1">
-              <span className="inline-block px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-xs font-semibold">
-                {active.tenant_name}
-              </span>
-              <span className="inline-block px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-xs font-semibold">
-                {roleLabel(active.role)}
-              </span>
-            </div>
-          </div>
-          <div className="flex gap-3 text-sm">
-            {auth.memberships.length > 1 && (
-              <a href="/choose-school" className="text-teal-700 hover:underline">Switch school</a>
-            )}
-            <a href="/profile" className="text-teal-700 hover:underline">Profile</a>
-            <a href="/logout" className="text-teal-700 hover:underline">Logout</a>
-          </div>
-        </div>
-      </Card>
-
+    <WorkspaceShell
+      sidebar={
+        <SidebarNav
+          items={navItems}
+          schoolName={active.tenant_name}
+          roleName="Student"
+          currentPath="/student"
+          switchSchool={auth.memberships.length > 1}
+          profile={{
+            user: { id: auth.user!.id, name: auth.user!.name, email: auth.user!.email, is_system_admin: auth.user!.is_system_admin },
+            memberships: auth.memberships.map(m => ({ tenant_id: m.tenant_id, tenant_name: m.tenant_name, role: m.role, status: "ACTIVE" })),
+            changePasswordAction,
+          }}
+        />
+      }
+      header={
+        <WorkspaceHeader
+          title="My Exams"
+          subtitle="Your assigned exams and results"
+        />
+      }
+    >
       {/* My Sittings — only shown when the student has at least one */}
       {sittingsWithCounts.length > 0 && (
         <Card>
-          <h2 className="text-base font-semibold mb-3">📋 My Sittings</h2>
+          <h2 className="text-base font-semibold mb-3">My Sittings</h2>
           <div className="space-y-3">
             {sittingsWithCounts.map((s) => (
               <div key={s.id} className="border border-gray-200 rounded-lg p-3 flex items-center justify-between flex-wrap gap-2">
@@ -192,7 +198,7 @@ export default async function StudentPage() {
                   href={`/sitting-results?sitting_id=${s.id}`}
                   className="px-4 py-2 bg-teal-700 text-white text-xs font-semibold rounded-lg hover:bg-teal-800 no-underline"
                 >
-                  View Sitting Results →
+                  View Sitting Results
                 </a>
               </div>
             ))}
@@ -305,7 +311,7 @@ export default async function StudentPage() {
                             href={`/attempt-take?attempt_id=${inProgress.id}`}
                             className="px-4 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 no-underline"
                           >
-                            Resume Exam →
+                            Resume Exam
                           </a>
                         );
                       }
@@ -318,7 +324,7 @@ export default async function StudentPage() {
                               href={`/attempt-start?exam_id=${exam.exam_id}`}
                               className="px-4 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 no-underline"
                             >
-                              Start Exam →
+                              Start Exam
                             </a>
                             {resultsButtons()}
                           </>
@@ -335,6 +341,6 @@ export default async function StudentPage() {
           })}
         </div>
       )}
-    </main>
+    </WorkspaceShell>
   );
 }
