@@ -21,6 +21,12 @@ When the user says "wrap up", "close", "done for today", or similar — follow t
 3. Update `README.md` if project state changed (new routes, major features, architectural changes)
 4. Give a brief summary of what was done this session
 
+## Building new features
+- Before writing any code for a new feature, read `docs/SYSTEM_UI_MAP.md` to understand what UI patterns the stack supports (drawers, modals, inline panels, tabs, workspace sections, etc.)
+- Decide which container the feature belongs in: workspace section, drawer, modal, or standalone page. Make this decision before coding, not after.
+- Prefer building reusable components over one-off page code. If something could be used in more than one place, extract it as a component.
+- Follow the existing workspace pattern: nav items in `src/lib/*-nav.ts`, section components in `src/components/`, orchestration in the page file.
+
 ## Key project files
 - `README.md` — project overview, stack, structure, current state
 - `docs/build-list.md` — working list of what to build next, ideas, and deferred items
