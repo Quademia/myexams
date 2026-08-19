@@ -6,13 +6,13 @@
 
 ## What Is This Project
 
-A **multi-tenant exam taking platform for schools.**
+A **multi-tenant exam taking platform for any organisation.**
 - Schools sign up and get their own isolated space
 - Teachers create and manage exams
 - Students take exams and view results
 - Admins manage users and publish results
 - Built to be simple, affordable, and work well in low-resource school environments
-- **Beta's identity: exams are the core product, not quizzes. Everything is designed around formal exam running.**
+- **MyExams' identity: exams are the core product, not quizzes. Everything is designed around formal exam running.**
 
 ---
 
