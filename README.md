@@ -31,7 +31,11 @@ This repo has had three names. Each was retired for a reason worth keeping on th
 - **Why `My*`:** it lines up with MyNclex, MyTeacher, MyNMCLicensure.
 - **Consequence:** the future home moves from `schools.quademia.com` to **`exams.quademia.com`**. Not yet attached.
 
-⚠ **Still carrying the old name, deliberately:** `wrangler.jsonc` → `"name": "qacademy-beta-b"` is the **Worker's identity** — changing it deploys a *new* Worker at a new URL and orphans the live one. Its own decision, together with the subdomain. `package.json` is also still `qacademy-beta-b` (cosmetic).
+⚠ **The Cloudflare Worker is `myexams-dev`** — renamed in the dashboard on 2026-08-19, which moved the address to `myexams-dev.mybackpacc.workers.dev` (the old host now 404s) and required **both OAuth redirect URIs to be re-registered**, in Google Cloud Console and Azure. Renaming in place kept the Worker, its secrets and its D1 binding — `APP_SECRET` was never at risk.
+
+⚠ **`wrangler.jsonc` must always match the Worker's real name.** wrangler deploys *by name*: a mismatch creates a second Worker and silently stops updating the live one. `myexams` with no suffix is reserved for the future prod clone — this app has never been cloned to prod, and `docs/cloning.md` is the runbook for when it is.
+
+ⓘ `package.json` still reads `qacademy-beta-b`. Cosmetic, and left alone deliberately: its name has to stay in step with `package-lock.json` or `npm ci` can fail in the deploy.
 
 ---
 

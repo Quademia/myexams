@@ -2,7 +2,7 @@
   // This file tells Cloudflare Workers how to run our Next.js app.
   // The "main" points to the OpenNext worker entry point.
   // D1 binding gives our app access to the database.
-  "name": "qacademy-beta-b",
+  "name": "myexams-dev",
   "main": ".open-next/worker.js",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
