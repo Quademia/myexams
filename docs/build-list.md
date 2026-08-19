@@ -47,7 +47,8 @@ Decided to build later. Reason noted for each.
 - **UI/design polish sprint + PWA installability** — visual consistency pass and mobile app-like install
 - **Terminology settings per tenant** — let organisations choose their own labels (student vs candidate, etc.)
 - **Plan and usage management** — commercial readiness, prevent abuse, enable pricing tiers
+- **Resend account + sending identity** — password reset sends from `QAcademy <noreply@qacademynurses.com>`, i.e. very likely gamma's Resend account and its verified domain. A retired brand on a user-facing email, and a live path depending on another product's infrastructure. Resend's free plan allows one verified domain per account and gamma's slot is taken, so MyExams cannot verify its own without paying. Fix mirrors MyNclex: own account under `admin@quademia.com`, `quademia.com` verified, from-address updated. Code change plus key swap — but on a live login path, so its own session. See `docs/cloning.md` §0
 
 ---
 
-*Last updated: 2026-04-01*
+*Last updated: 2026-08-19 — Resend sending identity deferred (see Deferred). Previously 2026-04-01.*
