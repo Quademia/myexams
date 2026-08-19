@@ -339,10 +339,10 @@ NextAuth v5 (Auth.js) handles all authentication. Three login methods:
 
 ## What's Next
 
-See **[docs/build-list.md](docs/build-list.md)** for the full working list of features to build, ideas, and deferred items.
+⭐ Start with **[docs/build-list.md](docs/build-list.md)** → *Where things stand*, which records the last session and everything carried forward from it. The same file holds the full working list of features to build, ideas, and deferred items.
 
 See **[docs/market-and-roadmap.md](docs/market-and-roadmap.md)** for strategic direction and long-term planning.
 
 ---
 
-*Last updated: 2026-04-01 — Workspace restructure complete (all 4 roles). Build list moved to docs/build-list.md.*
+*Last updated: 2026-08-19 — repo moved to the Quademia org and renamed MyExams; Cloudflare Worker renamed `myexams-dev`. See *Name & Lineage* above, and `docs/build-list.md` → *Where things stand*. Previously 2026-04-01 — workspace restructure complete (all 4 roles).*
