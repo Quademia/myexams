@@ -1,4 +1,4 @@
-# QAcademy Beta-B — System UI Capability Map
+# MyExams — System UI Capability Map
 
 This document explains how the current stack should be used when planning and building interfaces.
 

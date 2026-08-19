@@ -1,4 +1,4 @@
-# QAcademy Beta-B — Capabilities & Planning
+# MyExams — Capabilities & Planning
 
 *This document captures what the new stack offers, what we are already using, what remains untapped, and what to build next. Updated as the platform grows.*
 

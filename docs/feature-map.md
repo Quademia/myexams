@@ -1,4 +1,4 @@
-# QAcademy Beta-B — Feature Map
+# MyExams — Feature Map
 
 *A living document that tracks what every page, button, and form action does in the app. Updated as pages are built, reviewed, or changed.*
 

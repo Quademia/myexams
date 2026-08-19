@@ -1,6 +1,6 @@
-# QAcademy Beta-B — Next.js Migration
+# MyExams
 
-*This is the Next.js migration of QAcademy Beta. The original app (`qacademy-beta`) remains untouched as a safety net.*
+*A multi-tenant exam platform for any organisation — schools, training institutes, professional bodies. Part of the Quademia family.*
 
 ---
 
@@ -13,6 +13,25 @@ A **multi-tenant exam taking platform for schools.**
 - Admins manage users and publish results
 - Built to be simple, affordable, and work well in low-resource school environments
 - **Beta's identity: exams are the core product, not quizzes. Everything is designed around formal exam running.**
+
+---
+
+## Name & Lineage
+
+This repo has had three names. Each was retired for a reason worth keeping on the record.
+
+**`qacademy-beta`** — the original build: Cloudflare Pages Functions + D1, custom-built auth, one large JavaScript file per section (`admin.js`, `exams.js`, `student.js`). "Beta" was never a product name — it was an internal repo codename from the alpha / beta / gamma era. `alpha` was the nurses-hub migration workspace, `gamma` the live nurses hub (MyNMCLicensure + MyTeacher), `beta` this exam platform.
+
+**`qacademy-beta-b`** — the Next.js rewrite, March 2026. The `-b` meant **"take B"**: the rewrite ran in a parallel repo so the working app was never at risk, and `qacademy-beta` stayed untouched as a safety net. Same database, same logic, same features, better structure — reasoning kept in `docs/_archived/Qacademy beta proposed new stack.md`. The safety net has since served its purpose, which is what makes the name expendable.
+
+**`myexams`** — 2026-08-19, moved into the `Quademia` GitHub org and renamed.
+
+- **Why rename:** "beta-b" described a *migration state*, not a product. Unreadable to anyone outside the build, and the original it distinguished itself from is no longer live work.
+- **Why `exams`, not `schools`:** the platform is not school-specific. Any organisation running formal exams is a tenant — training institutes, professional bodies, employers. ⭐ **The database already agreed:** the tenant table is `tenants`, never `schools`. Only the UI wording says "school" (706 occurrences, 47 files) — a presentation-layer sweep still to do.
+- **Why `My*`:** it lines up with MyNclex, MyTeacher, MyNMCLicensure.
+- **Consequence:** the future home moves from `schools.quademia.com` to **`exams.quademia.com`**. Not yet attached.
+
+⚠ **Still carrying the old name, deliberately:** `wrangler.jsonc` → `"name": "qacademy-beta-b"` is the **Worker's identity** — changing it deploys a *new* Worker at a new URL and orphans the live one. Its own decision, together with the subdomain. `package.json` is also still `qacademy-beta-b` (cosmetic).
 
 ---
 
