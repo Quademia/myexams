@@ -6,49 +6,62 @@
 
 ## 0. Account ownership
 
-⚠ **Which external account holds each service. Written down 2026-08-19 because
-it was not recorded anywhere, and none of it is discoverable from the code.**
+⚠ **Which external account holds each service. Written down 2026-08-19 because it
+was not recorded anywhere, and none of it is discoverable from the code or the
+Cloudflare dashboard — secrets are write-only once set.**
 
 | Service | Account | Status |
 |---|---|---|
 | **Cloudflare** | personal (`mybackpacc`) | ✅ Worker `myexams-dev`, D1 `beta_b_db` |
 | **Google OAuth** | Sam's **personal Google account** | ✅ working |
-| **Azure / Microsoft Entra** | ⚠ **unknown — not yet identified** | ⚠ **Microsoft SSO does not work** (see below) |
+| **Azure / Microsoft Entra** | **`confidencearthur@hotmail.com`** (personal Hotmail) | ✅ working |
 | **Resend** | not recorded | — |
 
-### ⚠ Microsoft SSO is currently broken — deliberately left so
+**Application (client) ID: `945160b9-73af-4d85-8209-3e1bd02a153d`.** Search on this,
+not on the app's name — the GUID cannot drift, the display name can. ⓘ If the owning
+account is ever lost again, the ID can be read straight out of the running app: POST
+to `/api/auth/signin/microsoft-entra-id` with a CSRF token and read `client_id` off
+the redirect. That is how it was recovered on 2026-08-19.
 
-The Worker was renamed on 2026-08-19 (`qacademy-beta-b` → `myexams-dev`), which
-moved the host to `myexams-dev.mybackpacc.workers.dev`. Google's redirect URIs
-were re-registered; **Azure's were not, because the Microsoft account holding
-the app registration is not known.** Until it is found, "Sign in with Microsoft"
-fails on a redirect mismatch.
+### Going forward — a dedicated Microsoft account
 
-⚠ **The button is still on the login page** (`src/app/(auth)/login/page.tsx`) —
-left there on purpose, to be sorted out later. Microsoft SSO is not in use, so
-this blocks nothing. Email + password and Google both work.
+The Azure registration currently sits on a **personal Hotmail account that is Sam's
+own**, not the product's. A dedicated account is wanted instead.
 
-### Two things to settle before the prod clone
+⭐ **This does not conflict with the family rule, contrary to what §0 first recorded.**
+MyNclex settled (2026-08) that new infrastructure registers under
+**`admin@quademia.com`**. The apparent problem was that this app requires a *personal*
+Microsoft account — organisational accounts fail, and `src/auth.ts` hardcodes
+Microsoft's consumer tenant `9188040d-6c67-4c5b-b112-36a304b66dad`. But **a personal
+Microsoft account can be created against any email address**, including one on a
+domain you own. So `admin@quademia.com` can hold this registration as a personal
+Microsoft account, satisfying both constraints at once.
 
-**① The Google client should fold into the family's shared project.** MyNclex
-settled (2026-08) that new infrastructure registers under **`admin@quademia.com`**,
-and that there is **one `Quademia` Google Cloud project holding one OAuth client
-per product** — the consent screen is per-*project*, so this means verifying once
-and showing one brand for the whole family. MyExams predates that rule (March
-2026) and sits outside it.
+⚠ **Moving the registration means a new client ID and a new secret**, so it is a
+change to a working login path — do it at the prod clone, not casually.
 
-**② ⚠ Azure cannot follow that rule as written.** This app requires a **personal**
-Microsoft account — an organisational account fails, and `src/auth.ts` hardcodes
-Microsoft's consumer tenant `9188040d-6c67-4c5b-b112-36a304b66dad`. A workspace
-address like `admin@quademia.com` is not a personal Microsoft account, so "register
-it under the company account" has no clean answer here. Decide this **before** the
-clone, not during it.
+### Still to settle before the prod clone
+
+**The Google client should fold into the family's shared project.** MyNclex settled
+that there is **one `Quademia` Google Cloud project holding one OAuth client per
+product** — the consent screen is per-*project*, so this means verifying once and
+showing one brand across the family. MyExams predates that rule by five months and
+sits outside it.
 
 ### ⚠ The Azure client secret expires around March 2028
 
-It was created with a **24-month** expiry (§1.3 step 9). Nothing warns you. When it
-lapses, Microsoft SSO stops working with no deploy, no code change and no error you
-would have predicted.
+Created with a **24-month** expiry (§1.3 step 9). Nothing warns you. When it lapses,
+Microsoft SSO stops working with no deploy, no code change, and no error anyone would
+have predicted. The exact date is on the registration's *Certificates & secrets* page.
+
+### History — the 2026-08-19 Worker rename
+
+The Worker was renamed `qacademy-beta-b` → `myexams-dev`, moving the host to
+`myexams-dev.mybackpacc.workers.dev`. **Both** OAuth providers had to have their
+redirect URIs re-registered; Microsoft sign-in was broken for the few hours it took
+to find which account held the Azure registration. ⭐ The lesson is the reason §0
+exists: the rename itself was reversible and cheap, but *not knowing who owned the
+account* was what actually cost time.
 
 ---
 
@@ -95,7 +108,7 @@ All of the following must be set as **Secrets** (not plain text variables) in Cl
 
 ### 1.3 Microsoft OAuth Setup (Personal Accounts)
 
-⚠ **See §0 — Microsoft SSO is currently broken and the account holding this registration is not known.** The steps below still describe how it was set up, and how to set it up in a new environment.
+ⓘ **See §0 for which account holds this registration** (`confidencearthur@hotmail.com`) and the Application (client) ID. The steps below describe how it was set up, and how to set it up in a new environment.
 
 QAcademy is currently configured for **personal Microsoft accounts only** (Outlook, Hotmail, Xbox). Organisational accounts require publisher verification in Azure — not yet set up.
 
@@ -169,4 +182,4 @@ When cloning to a new environment, paste the entire contents of `db/schema.sql` 
 
 ---
 
-*Last updated: 2026-08-19 — account ownership recorded (§0); Microsoft SSO documented as broken after the Worker rename. Previously 2026-03-29 — D1 setup simplified to reference schema.sql, security tables documented.*
+*Last updated: 2026-08-19 — account ownership recorded (§0): Cloudflare, Google and Azure owners named, the Entra client ID captured, and the dedicated-Microsoft-account plan settled. Previously 2026-03-29 — D1 setup simplified to reference schema.sql, security tables documented.*
