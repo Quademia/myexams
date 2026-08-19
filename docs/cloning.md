@@ -4,6 +4,54 @@
 
 ---
 
+## 0. Account ownership
+
+⚠ **Which external account holds each service. Written down 2026-08-19 because
+it was not recorded anywhere, and none of it is discoverable from the code.**
+
+| Service | Account | Status |
+|---|---|---|
+| **Cloudflare** | personal (`mybackpacc`) | ✅ Worker `myexams-dev`, D1 `beta_b_db` |
+| **Google OAuth** | Sam's **personal Google account** | ✅ working |
+| **Azure / Microsoft Entra** | ⚠ **unknown — not yet identified** | ⚠ **Microsoft SSO does not work** (see below) |
+| **Resend** | not recorded | — |
+
+### ⚠ Microsoft SSO is currently broken — deliberately left so
+
+The Worker was renamed on 2026-08-19 (`qacademy-beta-b` → `myexams-dev`), which
+moved the host to `myexams-dev.mybackpacc.workers.dev`. Google's redirect URIs
+were re-registered; **Azure's were not, because the Microsoft account holding
+the app registration is not known.** Until it is found, "Sign in with Microsoft"
+fails on a redirect mismatch.
+
+⚠ **The button is still on the login page** (`src/app/(auth)/login/page.tsx`) —
+left there on purpose, to be sorted out later. Microsoft SSO is not in use, so
+this blocks nothing. Email + password and Google both work.
+
+### Two things to settle before the prod clone
+
+**① The Google client should fold into the family's shared project.** MyNclex
+settled (2026-08) that new infrastructure registers under **`admin@quademia.com`**,
+and that there is **one `Quademia` Google Cloud project holding one OAuth client
+per product** — the consent screen is per-*project*, so this means verifying once
+and showing one brand for the whole family. MyExams predates that rule (March
+2026) and sits outside it.
+
+**② ⚠ Azure cannot follow that rule as written.** This app requires a **personal**
+Microsoft account — an organisational account fails, and `src/auth.ts` hardcodes
+Microsoft's consumer tenant `9188040d-6c67-4c5b-b112-36a304b66dad`. A workspace
+address like `admin@quademia.com` is not a personal Microsoft account, so "register
+it under the company account" has no clean answer here. Decide this **before** the
+clone, not during it.
+
+### ⚠ The Azure client secret expires around March 2028
+
+It was created with a **24-month** expiry (§1.3 step 9). Nothing warns you. When it
+lapses, Microsoft SSO stops working with no deploy, no code change and no error you
+would have predicted.
+
+---
+
 ## 1. Authentication Setup (NextAuth v5)
 
 QAcademy uses NextAuth v5 with three login methods: email + password, Google SSO, and Microsoft SSO. Each requires external services to be configured before the app will work.
@@ -46,6 +94,8 @@ All of the following must be set as **Secrets** (not plain text variables) in Cl
 ---
 
 ### 1.3 Microsoft OAuth Setup (Personal Accounts)
+
+⚠ **See §0 — Microsoft SSO is currently broken and the account holding this registration is not known.** The steps below still describe how it was set up, and how to set it up in a new environment.
 
 QAcademy is currently configured for **personal Microsoft accounts only** (Outlook, Hotmail, Xbox). Organisational accounts require publisher verification in Azure — not yet set up.
 
@@ -119,4 +169,4 @@ When cloning to a new environment, paste the entire contents of `db/schema.sql` 
 
 ---
 
-*Last updated: 2026-03-29 — D1 setup simplified to reference schema.sql, security tables documented.*
+*Last updated: 2026-08-19 — account ownership recorded (§0); Microsoft SSO documented as broken after the Worker rename. Previously 2026-03-29 — D1 setup simplified to reference schema.sql, security tables documented.*
